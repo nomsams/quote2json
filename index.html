@@ -1,0 +1,1206 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>QUOTE to JSON • Ultimate Extraction & Translation</title>
+
+  <!-- ====== External Libraries ====== -->
+  <!-- PDF.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <script>
+    (function ensurePdfjsReady(){
+      const lib = window.pdfjsLib;
+      if (!lib) return setTimeout(ensurePdfjsReady, 30);
+      lib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
+    })();
+  </script>
+  <!-- Tesseract.js -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.5/dist/tesseract.min.js"></script>
+  <!-- Pako for Compression -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+
+  <!-- ====== Styles ====== -->
+  <style>
+    :root {
+      --bg: #0f1115; --panel: #151923; --muted: #232836; --muted-2: #2b3244; 
+      --text: #e6e6e6; --text-dim: #9aa3b6; --accent: #62d0ff; 
+      --ok: #30d158; --warn: #ffcc00; --err: #ff453a; 
+      --line: #1e2431; --shadow: 0 10px 30px rgba(0,0,0,.35);
+      --node: #1a2030; --pipe: #2d3346; --pipe-active: #62d0ff; --pipe-done: #30d158;
+      --highlight: #ff9f1c;
+    }
+    [data-theme="light"] {
+      --bg: #f0f2f5; --panel: #ffffff; --muted: #dce3eb; --muted-2: #eef2f6;
+      --text: #1a202c; --text-dim: #64748b; --accent: #2563eb;
+      --ok: #059669; --warn: #d97706; --err: #dc2626;
+      --line: #e2e8f0; --shadow: 0 4px 12px rgba(0,0,0,.05);
+      --node: #ffffff; --pipe: #cbd5e1; --pipe-active: #2563eb; --pipe-done: #059669;
+      --highlight: #d97706;
+    }
+
+    * { box-sizing: border-box; }
+    
+    body { 
+      margin: 0; background: var(--bg); color: var(--text); 
+      font-family: system-ui, -apple-system, sans-serif; 
+      min-height: 100vh; 
+      display: flex; flex-direction: column;
+      overflow-y: auto; 
+      overflow-x: hidden;
+    }
+    
+    header { 
+      height: 56px; background: var(--panel); border-bottom: 1px solid var(--line); 
+      display: flex; align-items: center; justify-content: space-between; 
+      padding: 0 20px; position: sticky; top: 0; z-index: 100; box-shadow: var(--shadow); 
+    }
+    h1 { font-size: 16px; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 10px; }
+    .badge { background: var(--accent); color: #000; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 700; }
+    
+    main { 
+      flex: 1; 
+      display: grid; 
+      grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); 
+      gap: 20px; 
+      padding: 20px; 
+      max-width: 1800px;
+      margin: 0 auto;
+      width: 100%;
+      position: relative; 
+      padding-bottom: 250px; 
+    }
+    
+    .col { display: flex; flex-direction: column; gap: 15px; min-height: 0; z-index: 2; }
+    
+    .card { background: var(--panel); border: 1px solid var(--muted); border-radius: 12px; padding: 0; box-shadow: var(--shadow); display: flex; flex-direction: column; position: relative; transition: border-color 0.3s; overflow: hidden; }
+    .card:hover { border-color: var(--muted-2); }
+    
+    .card-head { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); padding: 12px 16px; background: var(--muted-2); z-index: 5; }
+    .card-title { font-weight: 600; font-size: 14px; color: var(--accent); }
+    
+    .card-body { padding: 16px; display: flex; flex-direction: column; gap: 10px; transition: opacity 0.3s; }
+    
+    /* Disabled State Logic */
+    .card.disabled .card-body { opacity: 0.3; pointer-events: none; filter: grayscale(0.8); }
+    .card.disabled .card-head { opacity: 1; pointer-events: auto; } 
+    
+    label { font-size: 12px; font-weight: 600; color: var(--text-dim); display: block; margin-bottom: 4px; }
+    input, select, textarea { width: 100%; background: var(--bg); border: 1px solid var(--muted); color: var(--text); padding: 8px; border-radius: 6px; font-family: inherit; font-size: 13px; outline: none; transition: 0.2s; }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+    textarea { resize: vertical; min-height: 80px; font-family: monospace; line-height: 1.4; }
+    
+    .btn-row { display: flex; gap: 8px; margin-top: 4px; }
+    button { flex: 1; background: var(--muted-2); border: 1px solid var(--muted); color: var(--text); padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: 0.2s; }
+    button:hover { border-color: var(--accent); color: var(--accent); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(1); }
+    button.primary { background: var(--accent); color: #090b10; border: none; }
+    button.primary:hover { filter: brightness(1.1); color: #000; }
+    
+    /* SVG Pipes Layer */
+    .pipes-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+    .flow-line { fill: none; stroke: var(--pipe); stroke-width: 3px; transition: stroke 0.5s, stroke-dashoffset 1s; }
+    .flow-line.active { stroke: var(--pipe-active); filter: drop-shadow(0 0 4px var(--pipe-active)); }
+    .flow-line.done { stroke: var(--pipe-done); filter: drop-shadow(0 0 4px var(--pipe-done)); }
+
+    .drop { border: 2px dashed var(--muted); border-radius: 8px; padding: 20px; text-align: center; cursor: pointer; transition: 0.2s; }
+    .drop:hover, .drop.drag { border-color: var(--accent); background: rgba(98, 208, 255, 0.05); }
+    
+    .progress-wrap { height: 4px; background: var(--muted); border-radius: 2px; overflow: hidden; margin-top: 5px; }
+    .progress-bar { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s; }
+    .status { font-size: 11px; color: var(--text-dim); margin-top: 4px; display: flex; justify-content: space-between; }
+    
+    .preview-box { background: var(--bg); border: 1px solid var(--muted); border-radius: 6px; padding: 10px; overflow: auto; max-height: 300px; font-family: monospace; font-size: 11px; white-space: pre-wrap; }
+    
+    /* Gallery & Selection */
+    .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 6px; max-height: 200px; overflow-y: auto; padding: 4px; }
+    .thumb { aspect-ratio: 1; background: #000; border-radius: 4px; overflow: hidden; border: 2px solid var(--muted); position: relative; cursor: pointer; transition: 0.2s; opacity: 0.5; filter: grayscale(1); }
+    .thumb.selected { border-color: var(--ok); opacity: 1; filter: grayscale(0); box-shadow: 0 0 8px rgba(48, 209, 88, 0.3); }
+    .thumb img { width: 100%; height: 100%; object-fit: contain; }
+    .thumb span { position: absolute; bottom: 0; right: 0; background: rgba(0,0,0,0.7); color: #fff; font-size: 9px; padding: 1px 3px; }
+    .thumb-check { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; background: var(--ok); border-radius: 50%; display: none; align-items: center; justify-content: center; font-size: 10px; color: #000; font-weight: bold; }
+    .thumb.selected .thumb-check { display: flex; }
+
+    #logs { position: fixed; bottom: 0; left: 0; right: 0; height: 200px; background: var(--panel); border-top: 1px solid var(--line); z-index: 200; display: flex; flex-direction: column; transition: transform 0.3s; box-shadow: 0 -5px 20px rgba(0,0,0,0.5); }
+    #logs.minimized { transform: translateY(165px); }
+    .log-head { padding: 8px 20px; background: var(--muted-2); font-size: 12px; font-weight: 700; display: flex; justify-content: space-between; cursor: pointer; }
+    .log-body { flex: 1; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 12px; color: var(--text-dim); }
+    .log-entry { margin-bottom: 4px; border-bottom: 1px solid var(--line); padding-bottom: 2px; word-break: break-all; }
+    .log-entry.ERR { color: var(--err); }
+    .log-entry.SUCCESS { color: var(--ok); }
+    .log-entry.WARN { color: var(--warn); }
+    .log-entry.VERBOSE { color: #555; font-size: 11px; }
+
+    .switch { position: relative; width: 36px; height: 20px; background: var(--muted); border-radius: 20px; cursor: pointer; transition: 0.3s; }
+    .switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; background: #fff; border-radius: 50%; transition: 0.3s; }
+    .switch.on { background: var(--accent); }
+    .switch.on::after { transform: translateX(16px); }
+
+    .hidden { display: none !important; }
+    .settings-group { padding: 8px; background: var(--bg); border-radius: 6px; border: 1px solid var(--line); margin-top: 8px; }
+    
+    .ph-tag { color: var(--highlight); font-weight: bold; border: 1px solid var(--highlight); border-radius: 4px; padding: 0 4px; background: rgba(255, 159, 28, 0.1); }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1><span>PDF Flow</span> <span class="badge">Ultimate</span></h1>
+  <div style="display:flex; gap:15px; align-items:center;">
+    <div style="font-size:12px; color:var(--text-dim)">Dark Mode</div>
+    <div id="themeToggle" class="switch on"></div>
+  </div>
+</header>
+
+<main>
+  <!-- Visual Pipes SVG -->
+  <svg class="pipes-layer" id="flowSvg"></svg>
+
+  <!-- COLUMN 1: PDF & OCR -->
+  <div class="col">
+    <div class="card" id="cardStep1">
+      <div class="card-head">
+        <span class="card-title">1. Input & Extraction</span>
+        <span class="badge">Smart Select</span>
+      </div>
+      
+      <div class="card-body">
+        <div id="dropZone" class="drop">
+          <strong>Drop PDF Here</strong><br>
+          <span style="font-size:11px; color:var(--text-dim)">or click to browse</span>
+          <input type="file" id="fileInput" accept="application/pdf" hidden>
+        </div>
+        
+        <div class="settings-group">
+          <div style="display:flex; justify-content:space-between; margin-bottom:5px">
+            <label style="margin:0">Smart Image Select</label>
+            <div id="smartSelectToggle" class="switch on" title="Auto-select non-duplicate, correct aspect ratio images"></div>
+          </div>
+          <label>Extraction Method</label>
+          <select id="extractMode">
+            <option value="local">Local Enhanced (Smart Placement)</option>
+            <option value="deepseek">DeepSeek API (Cloud)</option>
+          </select>
+        </div>
+
+        <!-- Local Settings -->
+        <div id="localSettings" class="settings-group">
+          <div style="display:flex; justify-content:space-between; margin-bottom:5px">
+            <label style="margin:0">Auto-OCR (Sparse Text)</label>
+            <div id="autoOcrToggle" class="switch on"></div>
+          </div>
+        </div>
+
+        <!-- DeepSeek Settings -->
+        <div id="deepseekSettings" class="settings-group hidden">
+          <label>API Endpoint</label>
+          <input id="ocrEndpoint" type="text" value="https://api.alphaxiv.org/models/v1/deepseek/deepseek-ocr/inference">
+          <label style="margin-top:5px">Proxy (Optional)</label>
+          <input id="ocrProxy" type="text" placeholder="https://your-proxy.com/...">
+        </div>
+
+        <div class="btn-row">
+          <button id="btnStep1" class="primary" disabled>Run Extraction</button>
+          <button id="btnCancel1" disabled>Cancel</button>
+        </div>
+
+        <div>
+          <div class="status">
+            <span id="status1">Waiting for file...</span>
+            <span id="progText1">0%</span>
+          </div>
+          <div class="progress-wrap"><div id="progBar1" class="progress-bar"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Preview Step 1 -->
+    <div class="card" style="flex:1">
+      <div class="card-head">
+        <span class="card-title">Extracted Assets</span>
+        <span style="font-size:10px; color:var(--text-dim)">Click to toggle selection</span>
+      </div>
+      <div class="card-body" style="flex:1; overflow:hidden;">
+        <div id="gallery" class="gallery"></div>
+        <label style="margin-top:10px">Markdown Output (Placeholders Injected)</label>
+        <div id="mdOutput" class="preview-box" style="height:300px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- COLUMN 2: Groq & Schema -->
+  <div class="col">
+    <div class="card" id="cardStep2">
+      <div class="card-head">
+        <span class="card-title">2. Structure Data</span>
+        <span class="badge">Groq LLM</span>
+      </div>
+
+      <div class="card-body">
+        <div class="btn-row">
+          <div style="flex:1">
+            <label>Groq API Key</label>
+            <input id="groqKey" type="password" placeholder="gsk_...">
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <div style="flex:1">
+            <label>Model</label>
+            <select id="groqModel">
+              <option value="llama-3.3-70b-versatile" selected>llama-3.3-70b (Versatile)</option>
+              <option value="llama-3.1-70b-versatile">llama-3.1-70b</option>
+              <option value="mixtral-8x7b-32768">mixtral-8x7b</option>
+              <option value="gemma2-9b-it">gemma2-9b</option>
+            </select>
+          </div>
+          <div style="flex:1">
+            <label>Thinking Mode</label>
+            <select id="reasoningEffort">
+                <option value="high" selected>High</option>
+                <option value="medium">Medium</option>
+                <option value="disabled">Disabled</option>
+            </select>
+          </div>
+        </div>
+        
+        <div class="btn-row">
+             <div style="flex:1">
+              <label>CORS Proxy</label>
+              <div style="display:flex; align-items:center; height:36px;">
+                <div id="corsToggle" class="switch on" title="Use corsproxy.io"></div>
+                <span style="font-size:11px; margin-left:8px">Enabled</span>
+              </div>
+            </div>
+        </div>
+
+        <div>
+          <label>JSON Schema</label>
+          <div style="display:flex; gap:5px">
+            <input type="file" id="schemaFile" accept=".json,.txt" style="width:70%">
+            <button id="loadDefaultSchema" style="width:30%">Load Default</button>
+          </div>
+          <textarea id="schemaInput" placeholder="Paste JSON Schema here..." style="margin-top:5px; height:60px"></textarea>
+        </div>
+
+        <div>
+          <label>Prompt Instruction</label>
+          <textarea id="groqPrompt" style="height:100px">Output a json using the text provided while modeling the json according to the json schema provided. Most text is in chronological order. 
+!IMPORTANT: Do not summarize. 
+!IMPORTANT: Keep image placeholder tags ({{IMG:...}}) exactly as they are.
+!IMPORTANT: Convert all measurements to SI units where appropriate.
+!IMPORTANT: Ensure high accuracy in data extraction.</textarea>
+        </div>
+
+        <button id="btnStep2" class="primary" style="width:100%" disabled>Run Structuring</button>
+
+        <div>
+          <div class="status"><span id="status2">Idle</span></div>
+          <div class="progress-wrap"><div id="progBar2" class="progress-bar"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Preview Step 2 -->
+    <div class="card" style="flex:1">
+      <div class="card-head">
+        <span class="card-title">Structured JSON</span>
+        <button style="width:auto; padding:2px 8px; font-size:10px" onclick="copyToClip('jsonOutput')">Copy</button>
+      </div>
+      <div class="card-body" style="flex:1; overflow:hidden;">
+        <div id="jsonOutput" class="preview-box" style="height:100%"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- COLUMN 3: Translation & Verification -->
+  <div class="col">
+    <div class="card disabled" id="cardTranslation">
+      <div class="card-head">
+        <span class="card-title">3. Translation & Verify</span>
+        <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:11px; color:var(--text-dim)">Enable</span>
+            <div id="transToggle" class="switch"></div>
+        </div>
+      </div>
+
+      <div class="card-body">
+        <div class="btn-row">
+          <div style="flex:1">
+            <label>DeepL API Key</label>
+            <input id="deeplKey" type="password" placeholder="xxxxxxxx:fx">
+          </div>
+          <div style="flex:1">
+            <label>Target Lang</label>
+            <select id="deeplTarget">
+              <option value="SV" selected>Swedish (SV)</option>
+              <option value="EN">English (EN)</option>
+              <option value="DE">German (DE)</option>
+              <option value="ES">Spanish (ES)</option>
+              <option value="FR">French (FR)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Verification Subsection -->
+        <div class="settings-group">
+            <div style="display:flex; justify-content:space-between; margin-bottom:5px">
+                <label style="margin:0; color:var(--accent)">LLM Verification (Step 4)</label>
+                <div id="verifyToggle" class="switch on"></div>
+            </div>
+            
+            <label>Common Errors (Text or File)</label>
+            <div style="display:flex; gap:5px; margin-bottom:5px;">
+                <input type="file" id="commonErrorsFile" accept=".txt" style="width:100%">
+            </div>
+            <textarea id="commonErrorsInput" placeholder="List common translation errors here..." style="height:50px"></textarea>
+
+            <label style="margin-top:5px">Preferred Words (word : count)</label>
+            <div style="display:flex; gap:5px; margin-bottom:5px;">
+                <input type="file" id="prefWordsFile" accept=".txt" style="width:100%">
+            </div>
+            <textarea id="prefWordsInput" placeholder="word : count (higher count = more preferred)" style="height:50px"></textarea>
+        </div>
+
+        <button id="btnTransRun" class="primary" style="width:100%; margin-top:8px">Run DeepL + Verify</button>
+
+        <div>
+          <div class="status"><span id="statusTrans">Idle</span></div>
+          <div class="progress-wrap"><div id="progBarTrans" class="progress-bar"></div></div>
+        </div>
+
+        <div style="margin-top:8px">
+          <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+            <span class="card-title" style="font-size:12px;">Translated JSON</span>
+            <button style="width:auto; padding:2px 8px; font-size:10px" id="btnTransDownload">Download</button>
+          </div>
+          <div id="transOutputPreview" class="preview-box" style="height:150px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 4: Final Assembly -->
+    <div class="card" id="cardStep4">
+      <div class="card-head">
+        <span class="card-title">4. Final Assembly</span>
+        <span class="badge">Image Injection</span>
+      </div>
+
+      <div class="card-body">
+        <div class="btn-row">
+          <div style="flex:1">
+            <label>Compress Images</label>
+            <div id="compressToggle" class="switch on"></div>
+          </div>
+          <div style="flex:1">
+            <label>Quality (0.1-1.0)</label>
+            <input type="number" id="imgQuality" value="0.8" step="0.1" max="1">
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <div style="flex:1">
+            <label>Max Width (px)</label>
+            <input type="number" id="imgMaxWidth" value="1280">
+          </div>
+        </div>
+
+        <button id="btnStep3" class="primary" style="width:100%; margin-top:10px" disabled>Inject Images & Finalize</button>
+
+        <div>
+          <div class="status"><span id="status3">Idle</span></div>
+          <div class="progress-wrap"><div id="progBar3" class="progress-bar"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Preview Step 4 -->
+    <div class="card" style="flex:1">
+      <div class="card-head">
+        <span class="card-title">Final JSON</span>
+        <div style="display:flex; gap:5px">
+          <button style="width:auto; padding:2px 8px; font-size:10px" onclick="copyToClip('finalJson')">Copy</button>
+          <button class="primary" style="width:auto; padding:2px 8px; font-size:10px" id="btnDownload">Download</button>
+        </div>
+      </div>
+      <div class="card-body" style="flex:1; overflow:hidden;">
+        <div id="finalJson" class="preview-box" style="flex:1"></div>
+        
+        <!-- BTK Integration Buttons -->
+        <div style="margin-top:10px; display:flex; gap:8px;">
+          <button id="btnOpenBtkLocal" style="background-color:#2d3346; border:1px solid var(--accent); color:var(--accent);">Open in BTK (Local)</button>
+          <button id="btnOpenBtkUrl" style="background-color:#2d3346; border:1px solid var(--accent); color:var(--accent);">Open in BTK (URL)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- Logs Drawer -->
+<div id="logs" class="minimized">
+  <div class="log-head" onclick="document.getElementById('logs').classList.toggle('minimized')">
+    <span>System Logs</span>
+    <span>▲ Toggle</span>
+  </div>
+  <div id="logBody" class="log-body"></div>
+</div>
+
+<!-- Hidden Form for Fallback -->
+<iframe name="sink" id="sink" style="display:none"></iframe>
+<form id="hiddenForm" target="sink" method="POST" enctype="multipart/form-data" style="display:none">
+  <input type="file" name="file" id="hiddenInput"/>
+</form>
+
+<script>
+/**
+ * APP STATE & CONFIG
+ */
+const CONFIG = {
+  deepseek: { maxAttempts: 5, backoffBase: 3000, xhrTimeout: 600000, formTimeout: 300000 },
+  phPrefix: '{{IMG:',
+  phSuffix: '}}',
+  btkUrl: 'https://nomsams.github.io/btk/',
+  allowedRatios: [9/16, 16/9, 1/1, 4/3, 3/4]
+};
+
+const state = {
+  file: null,
+  assets: [], // { id, page, width, height, blob, url, yPos, hash }
+  selectedImageIds: new Set(),
+  layoutData: [],
+  rawDeepSeekText: "",
+  markdown: "",
+  groqJson: "",
+  finalJson: null,
+  aborts: { step1: null },
+  ocrWorker: null,
+  translationEnabled: false,
+  transOutputRaw: "",
+  step1Done: false,
+  step2Done: false,
+  step3Done: false,
+  step4Done: false
+};
+
+// UI References
+const ui = {
+  drop: document.getElementById('dropZone'),
+  fileIn: document.getElementById('fileInput'),
+  btn1: document.getElementById('btnStep1'),
+  btnCancel1: document.getElementById('btnCancel1'),
+  gallery: document.getElementById('gallery'),
+  mdOut: document.getElementById('mdOutput'),
+  extractMode: document.getElementById('extractMode'),
+  localSet: document.getElementById('localSettings'),
+  dsSet: document.getElementById('deepseekSettings'),
+  smartSelect: document.getElementById('smartSelectToggle'),
+  
+  groqKey: document.getElementById('groqKey'),
+  schemaIn: document.getElementById('schemaInput'),
+  btn2: document.getElementById('btnStep2'),
+  jsonOut: document.getElementById('jsonOutput'),
+  groqModel: document.getElementById('groqModel'),
+  reasoningEffort: document.getElementById('reasoningEffort'),
+  
+  cardTranslation: document.getElementById('cardTranslation'),
+  transToggle: document.getElementById('transToggle'),
+  deeplKey: document.getElementById('deeplKey'),
+  deeplTarget: document.getElementById('deeplTarget'),
+  verifyToggle: document.getElementById('verifyToggle'),
+  commonErrorsIn: document.getElementById('commonErrorsInput'),
+  prefWordsIn: document.getElementById('prefWordsInput'),
+  btnTransRun: document.getElementById('btnTransRun'),
+  transOutputPreview: document.getElementById('transOutputPreview'),
+  btnTransDownload: document.getElementById('btnTransDownload'),
+  
+  btn3: document.getElementById('btnStep3'),
+  finalOut: document.getElementById('finalJson'),
+  btnDl: document.getElementById('btnDownload'),
+  btnOpenBtkLocal: document.getElementById('btnOpenBtkLocal'),
+  btnOpenBtkUrl: document.getElementById('btnOpenBtkUrl'),
+  
+  logs: document.getElementById('logBody'),
+  flowSvg: document.getElementById('flowSvg')
+};
+
+/**
+ * INITIALIZATION
+ */
+(async function init() {
+  const theme = localStorage.getItem('theme') || 'dark';
+  setTheme(theme === 'dark');
+  document.getElementById('themeToggle').addEventListener('click', () => {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    setTheme(!isDark);
+  });
+
+  ui.groqKey.value = localStorage.getItem('groqKey') || '';
+  ui.groqKey.addEventListener('change', e => localStorage.setItem('groqKey', e.target.value));
+  ui.deeplKey.value = localStorage.getItem('deeplKey') || '';
+  ui.deeplKey.addEventListener('change', e => localStorage.setItem('deeplKey', e.target.value));
+
+  ui.extractMode.addEventListener('change', (e) => {
+    if(e.target.value === 'local') {
+      ui.localSet.classList.remove('hidden');
+      ui.dsSet.classList.add('hidden');
+    } else {
+      ui.localSet.classList.add('hidden');
+      ui.dsSet.classList.remove('hidden');
+    }
+  });
+
+  ui.transToggle.addEventListener('click', () => {
+    state.translationEnabled = !state.translationEnabled;
+    ui.transToggle.classList.toggle('on', state.translationEnabled);
+    ui.cardTranslation.classList.toggle('disabled', !state.translationEnabled);
+    log(`Translation Module ${state.translationEnabled ? 'Enabled' : 'Disabled'}`, "INFO");
+    drawFlow();
+  });
+  ui.cardTranslation.classList.add('disabled');
+
+  // Load Schema
+  const loadSchema = async () => {
+    try {
+      let res = await fetch('json-schema.txt');
+      if(!res.ok) res = await fetch('json-schema.json');
+      if(res.ok) {
+        ui.schemaIn.value = await res.text();
+        log("Loaded default schema.", "SUCCESS");
+      }
+    } catch(e) { log("Schema load error: " + e.message, "WARN"); }
+  };
+  await loadSchema();
+  document.getElementById('loadDefaultSchema').addEventListener('click', loadSchema);
+  document.getElementById('schemaFile').addEventListener('change', async (e) => {
+    const f = e.target.files[0];
+    if(f) ui.schemaIn.value = await f.text();
+  });
+
+  // Load Verification Files
+  document.getElementById('commonErrorsFile').addEventListener('change', async (e) => {
+    const f = e.target.files[0];
+    if(f) ui.commonErrorsIn.value = await f.text();
+  });
+  document.getElementById('prefWordsFile').addEventListener('change', async (e) => {
+    const f = e.target.files[0];
+    if(f) ui.prefWordsIn.value = await f.text();
+  });
+
+  document.querySelectorAll('.switch').forEach(el => {
+    if(el.id !== 'transToggle') el.addEventListener('click', () => el.classList.toggle('on'));
+  });
+
+  window.addEventListener('resize', drawFlow);
+  setTimeout(drawFlow, 500);
+  log("System Ready.");
+})();
+
+function setTheme(isDark) {
+  document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  document.getElementById('themeToggle').classList.toggle('on', isDark);
+  localStorage.setItem('theme', isDark ? 'dark' : 'light');
+}
+
+function log(msg, type="INFO") {
+  const div = document.createElement('div');
+  div.className = `log-entry ${type}`;
+  div.textContent = `[${new Date().toLocaleTimeString()}] [${type}] ${msg}`;
+  ui.logs.appendChild(div);
+  ui.logs.scrollTop = ui.logs.scrollHeight;
+}
+
+function setProgress(step, pct, text) {
+  const bar = document.getElementById(`progBar${step}`);
+  const txt = document.getElementById(`progText${step}`);
+  const stat = document.getElementById(`status${step}`);
+  if (bar) bar.style.width = `${pct}%`;
+  if (txt) txt.textContent = `${Math.round(pct)}%`;
+  if (stat && text) stat.textContent = text;
+}
+
+function setTransProgress(pct, text) {
+  const bar = document.getElementById('progBarTrans');
+  const stat = document.getElementById('statusTrans');
+  if (bar) bar.style.width = `${pct}%`;
+  if (stat && text) stat.textContent = text;
+}
+
+function drawFlow() {
+    const svg = ui.flowSvg;
+    svg.innerHTML = ''; 
+    const c1 = document.getElementById('cardStep1').getBoundingClientRect();
+    const c2 = document.getElementById('cardStep2').getBoundingClientRect();
+    const c3 = document.getElementById('cardTranslation').getBoundingClientRect();
+    const c4 = document.getElementById('cardStep4').getBoundingClientRect();
+    const main = document.querySelector('main').getBoundingClientRect();
+    
+    const getPos = (rect, side) => ({
+        x: side === 'left' ? rect.left - main.left : rect.right - main.left,
+        y: rect.top - main.top + (rect.height / 2)
+    });
+
+    const createPath = (start, end, colorClass) => {
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        const d = `M ${start.x} ${start.y} C ${start.x + 50} ${start.y}, ${end.x - 50} ${end.y}, ${end.x} ${end.y}`;
+        path.setAttribute("d", d);
+        path.setAttribute("class", "flow-line " + colorClass);
+        svg.appendChild(path);
+    };
+
+    const p1 = getPos(c1, 'right');
+    const p2 = getPos(c2, 'left');
+    createPath(p1, p2, state.step1Done ? 'done' : 'active');
+
+    const p2r = getPos(c2, 'right');
+    const p3l = getPos(c3, 'left');
+    let class2to3 = state.translationEnabled ? (state.step2Done ? (state.step3Done ? 'done' : 'active') : 'active') : 'flow-line';
+    createPath(p2r, p3l, class2to3);
+
+    if (state.translationEnabled) {
+        const p3b = { x: p3l.x + c3.width/2, y: c3.bottom - main.top };
+        const p4t = { x: p3l.x + c3.width/2, y: c4.top - main.top };
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", `M ${p3b.x} ${p3b.y} L ${p4t.x} ${p4t.y}`);
+        path.setAttribute("class", "flow-line " + (state.step3Done ? 'done' : 'active'));
+        svg.appendChild(path);
+    }
+
+    const p4l = getPos(c4, 'left');
+    let class2to4 = !state.translationEnabled ? (state.step2Done ? (state.step4Done ? 'done' : 'active') : 'active') : 'flow-line';
+    createPath(p2r, p4l, class2to4);
+}
+
+/**
+ * STEP 1: PDF INPUT & EXTRACTION
+ */
+ui.drop.addEventListener('click', () => ui.fileIn.click());
+ui.drop.addEventListener('dragover', e => { e.preventDefault(); ui.drop.classList.add('drag'); });
+ui.drop.addEventListener('dragleave', () => ui.drop.classList.remove('drag'));
+ui.drop.addEventListener('drop', e => { e.preventDefault(); ui.drop.classList.remove('drag'); handleFile(e.dataTransfer.files[0]); });
+ui.fileIn.addEventListener('change', e => handleFile(e.target.files[0]));
+
+function handleFile(f) {
+  if(!f || f.type !== 'application/pdf') return alert("PDF only");
+  state.file = f;
+  ui.drop.innerHTML = `<strong>${f.name}</strong><br>${(f.size/1024/1024).toFixed(2)} MB`;
+  ui.btn1.disabled = false;
+}
+
+ui.btn1.addEventListener('click', async () => {
+  resetStep1();
+  ui.btn1.disabled = true;
+  ui.btnCancel1.disabled = false;
+  state.aborts.step1 = new AbortController();
+  const signal = state.aborts.step1.signal;
+
+  try {
+    log("Starting Image Extraction...", "INFO");
+    setProgress(1, 5, "Scanning Images...");
+    await extractImagesFromPDF(state.file, signal);
+    
+    // Smart Selection Logic
+    const smart = ui.smartSelect.classList.contains('on');
+    const hashes = new Set();
+    
+    state.assets.forEach((asset, index) => {
+        let select = true;
+        if (smart) {
+            // 1. Aspect Ratio
+            const ratio = asset.width / asset.height;
+            const isRatioOk = CONFIG.allowedRatios.some(r => Math.abs(ratio - r) < 0.1);
+            if (!isRatioOk) select = false;
+
+            // 2. Size
+            if (asset.width < 100 || asset.height < 100) select = false;
+
+            // 3. Duplicates
+            if (hashes.has(asset.hash)) select = false;
+            else hashes.add(asset.hash);
+        }
+        if (select) state.selectedImageIds.add(asset.id);
+    });
+    renderGallery();
+
+    if (ui.extractMode.value === 'local') {
+      setProgress(1, 30, "Analyzing Layout...");
+      state.layoutData = await runLocalPDFProcessing(state.file, signal);
+    } else {
+      setProgress(1, 30, "Negotiating OCR...");
+      state.rawDeepSeekText = await runDeepSeekOCR(state.file, signal);
+    }
+    
+    updateMarkdownOutput();
+    setProgress(1, 100, "Extraction Complete");
+    state.step1Done = true;
+    drawFlow();
+    ui.btn2.disabled = false;
+
+  } catch (e) {
+    if (!signal.aborted) log(`Step 1 Failed: ${e.message}`, "ERR");
+    setProgress(1, 0, "Failed");
+  } finally {
+    ui.btn1.disabled = false;
+    ui.btnCancel1.disabled = true;
+  }
+});
+
+ui.btnCancel1.addEventListener('click', () => { if(state.aborts.step1) state.aborts.step1.abort(); });
+
+function resetStep1() {
+  state.assets = [];
+  state.selectedImageIds.clear();
+  state.layoutData = [];
+  state.rawDeepSeekText = "";
+  state.markdown = "";
+  ui.gallery.innerHTML = "";
+  ui.mdOut.innerHTML = "";
+  state.step1Done = false;
+  drawFlow();
+}
+
+// --- Image Extraction & Smart Logic ---
+async function extractImagesFromPDF(file, signal) {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument(buf).promise;
+  
+  for (let i = 1; i <= pdf.numPages; i++) {
+    if(signal.aborted) throw new Error("Aborted");
+    setProgress(1, 5 + (i/pdf.numPages)*20, `Scanning Images P${i}...`);
+    const page = await pdf.getPage(i);
+    const ops = await page.getOperatorList();
+    
+    for (let j = 0; j < ops.fnArray.length; j++) {
+      if (ops.fnArray[j] === pdfjsLib.OPS.paintImageXObject) {
+        const imgName = ops.argsArray[j][0];
+        let imgObj;
+        try { imgObj = page.objs.get(imgName); } catch(e) { continue; }
+        if(imgObj) await processImage(imgObj, i);
+      }
+    }
+  }
+}
+
+async function processImage(imgObj, pageNum) {
+  if(imgObj.width < 50 || imgObj.height < 50) return; 
+  const canvas = document.createElement('canvas');
+  canvas.width = imgObj.width;
+  canvas.height = imgObj.height;
+  const ctx = canvas.getContext('2d');
+
+  if(imgObj.bitmap) ctx.drawImage(imgObj.bitmap, 0, 0);
+  else if(imgObj.data) {
+    const imgData = ctx.createImageData(imgObj.width, imgObj.height);
+    const data = imgObj.data;
+    let j=0, len=data.length;
+    if(len === imgObj.width*imgObj.height*4) imgData.data.set(data);
+    else if(len === imgObj.width*imgObj.height*3) {
+      for(let i=0; i<len; i+=3) {
+        imgData.data[j++] = data[i]; imgData.data[j++] = data[i+1]; imgData.data[j++] = data[i+2]; imgData.data[j++] = 255;
+      }
+    }
+    ctx.putImageData(imgData, 0, 0);
+  } else return;
+
+  // Simple Hash for Dedupe (Center Row)
+  const midY = Math.floor(imgObj.height / 2);
+  const rowData = ctx.getImageData(0, midY, imgObj.width, 1).data;
+  let hash = "";
+  for(let k=0; k<rowData.length; k+=4) hash += rowData[k].toString(16);
+
+  const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+  const url = URL.createObjectURL(blob);
+  const id = `p${pageNum}_${state.assets.length+1}`;
+  state.assets.push({ id, page: pageNum, width: imgObj.width, height: imgObj.height, blob, url, hash });
+}
+
+function renderGallery() {
+    ui.gallery.innerHTML = '';
+    state.assets.forEach(asset => {
+        const div = document.createElement('div');
+        div.className = 'thumb';
+        if (state.selectedImageIds.has(asset.id)) div.classList.add('selected');
+        div.innerHTML = `<img src="${asset.url}"><span>${asset.id}</span><div class="thumb-check">✓</div>`;
+        div.onclick = () => {
+            if (state.selectedImageIds.has(asset.id)) {
+                state.selectedImageIds.delete(asset.id);
+                div.classList.remove('selected');
+            } else {
+                state.selectedImageIds.add(asset.id);
+                div.classList.add('selected');
+            }
+            updateMarkdownOutput();
+        };
+        ui.gallery.appendChild(div);
+    });
+}
+
+function updateMarkdownOutput() {
+    let md = "";
+    const mode = ui.extractMode.value;
+    const selectedAssets = state.assets.filter(a => state.selectedImageIds.has(a.id));
+
+    if (mode === 'local') {
+        state.layoutData.forEach(node => {
+            if (node.type === 'image') {
+                if (state.selectedImageIds.has(node.data.id)) {
+                    md += `\n\n${CONFIG.phPrefix}${node.data.id}|W:${node.data.width}|H:${node.data.height}${CONFIG.phSuffix}\n\n`;
+                }
+            } else {
+                md += node.content + "\n\n";
+            }
+        });
+        // Append any selected images not found in layout (fallback)
+        const usedIds = new Set(state.layoutData.filter(n => n.type === 'image').map(n => n.data.id));
+        selectedAssets.forEach(a => {
+            if(!usedIds.has(a.id)) md += `\n\n${CONFIG.phPrefix}${a.id}|W:${a.width}|H:${a.height}${CONFIG.phSuffix}\n\n`;
+        });
+    } else {
+        md = state.rawDeepSeekText + "\n\n";
+        selectedAssets.forEach(a => {
+            md += `\n${CONFIG.phPrefix}${a.id}|W:${a.width}|H:${a.height}${CONFIG.phSuffix}`;
+        });
+    }
+    state.markdown = md.trim();
+    ui.mdOut.innerHTML = state.markdown.replace(/{{IMG:[^}]+}}/g, '<span class="ph-tag">$&</span>');
+}
+
+// --- Local Processing ---
+async function runLocalPDFProcessing(file, signal) {
+  const buf = await file.arrayBuffer();
+  const doc = await pdfjsLib.getDocument(buf).promise;
+  let layoutData = [];
+  const autoOcr = document.getElementById('autoOcrToggle').classList.contains('on');
+
+  for(let i=1; i<=doc.numPages; i++){
+    if(signal.aborted) throw new Error("Aborted");
+    setProgress(1, 30 + (i/doc.numPages)*60, `Processing Text P${i}...`);
+    const page = await doc.getPage(i);
+    const textContent = await page.getTextContent();
+    const sparse = textContent.items.length < 10;
+    
+    if(sparse && autoOcr) {
+      const canvas = document.createElement('canvas');
+      const vp = page.getViewport({scale:2});
+      canvas.width = vp.width; canvas.height = vp.height;
+      await page.render({canvasContext:canvas.getContext('2d'), viewport:vp}).promise;
+      const worker = await (state.ocrWorker || (state.ocrWorker = await Tesseract.createWorker('eng')));
+      const res = await worker.recognize(canvas);
+      layoutData.push({ type: 'text', content: res.data.text });
+    } else {
+      layoutData.push({ type: 'text', content: textContent.items.map(i=>i.str).join(' ') });
+    }
+    
+    // Interleave images for this page
+    const pageImgs = state.assets.filter(a => a.page === i);
+    pageImgs.forEach(img => layoutData.push({ type: 'image', data: img }));
+  }
+  return layoutData;
+}
+
+// --- DeepSeek OCR ---
+async function runDeepSeekOCR(file, signal) {
+  const endpoint = document.getElementById('ocrEndpoint').value;
+  const proxy = document.getElementById('ocrProxy').value;
+  const url = proxy ? proxy : `https://corsproxy.io/?${encodeURIComponent(endpoint)}`;
+  
+  const fd = new FormData();
+  fd.append('file', file);
+  
+  const xhr = new XMLHttpRequest();
+  return new Promise((resolve, reject) => {
+    xhr.open('POST', url);
+    xhr.onload = () => {
+      if(xhr.status === 200) {
+        try {
+            const json = JSON.parse(xhr.responseText);
+            resolve(json.text || json.content || JSON.stringify(json));
+        } catch(e) { resolve(xhr.responseText); }
+      } else reject(new Error("API Error " + xhr.status));
+    };
+    xhr.onerror = () => reject(new Error("Network Error"));
+    if(signal) signal.addEventListener('abort', () => xhr.abort());
+    xhr.send(fd);
+  });
+}
+
+/**
+ * STEP 2: GROQ STRUCTURING
+ */
+ui.btn2.addEventListener('click', async () => {
+  const key = ui.groqKey.value;
+  const schema = ui.schemaIn.value;
+  if(!key || !schema) return alert("API Key and Schema required");
+
+  ui.btn2.disabled = true;
+  setProgress(2, 10, "Preparing Request...");
+  
+  const model = ui.groqModel.value;
+  const reasoning = ui.reasoningEffort.value;
+  const useProxy = document.getElementById('corsToggle').classList.contains('on');
+  const prompt = document.getElementById('groqPrompt').value;
+
+  const messages = [
+    { role: "system", content: "You are a data extraction assistant. Output valid JSON only." },
+    { role: "user", content: `JSON Schema:\n${schema}` },
+    { role: "user", content: `Text:\n${state.markdown}` },
+    { role: "user", content: prompt }
+  ];
+
+  try {
+    setProgress(2, 40, "Waiting for LLM...");
+    let url = "https://api.groq.com/openai/v1/chat/completions";
+    if(useProxy) url = "https://corsproxy.io/?" + encodeURIComponent(url);
+
+    const payload = {
+        model: model,
+        messages: messages,
+        temperature: 0.1,
+        response_format: { type: "json_object" }
+    };
+    // Add reasoning if supported by model (pseudo-code logic as API varies)
+    if(reasoning !== 'disabled' && model.includes('120b')) payload.reasoning_effort = reasoning;
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if(!res.ok) throw new Error(`Groq API Error: ${res.status}`);
+    const data = await res.json();
+    state.groqJson = data.choices[0].message.content;
+    ui.jsonOut.textContent = JSON.stringify(JSON.parse(state.groqJson), null, 2);
+    
+    setProgress(2, 100, "Complete");
+    state.step2Done = true;
+    drawFlow();
+    ui.btn3.disabled = false;
+  } catch(e) {
+    log(e.message, "ERR");
+    setProgress(2, 0, "Failed");
+  } finally {
+    ui.btn2.disabled = false;
+  }
+});
+
+/**
+ * STEP 3: TRANSLATION & VERIFICATION
+ */
+ui.btnTransRun.addEventListener('click', async () => {
+  const key = ui.deeplKey.value;
+  if(!key) return alert("DeepL Key required");
+  if(!state.groqJson) return alert("No JSON to translate");
+
+  ui.btnTransRun.disabled = true;
+  setTransProgress(10, "Parsing JSON...");
+
+  try {
+    const obj = JSON.parse(state.groqJson);
+    const segments = [];
+    const map = new Map();
+
+    // 1. Extract Segments
+    const walk = (o) => {
+        if(typeof o === 'string' && o.length > 2 && !o.startsWith('{{IMG')) {
+            if(!map.has(o)) { map.set(o, null); segments.push(o); }
+        } else if(typeof o === 'object' && o !== null) {
+            Object.values(o).forEach(walk);
+        }
+    };
+    walk(obj);
+
+    if(segments.length === 0) throw new Error("No text found");
+
+    // 2. DeepL Translate
+    setTransProgress(30, `Translating ${segments.length} segments...`);
+    const tgt = ui.deeplTarget.value;
+    const proxy = "https://corsproxy.io/?";
+    const params = new URLSearchParams();
+    params.append('auth_key', key);
+    params.append('target_lang', tgt);
+    segments.forEach(s => params.append('text', s));
+
+    const res = await fetch(proxy + encodeURIComponent('https://api-free.deepl.com/v2/translate'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params
+    });
+    if(!res.ok) throw new Error("DeepL Error");
+    const data = await res.json();
+    
+    data.translations.forEach((t, i) => map.set(segments[i], t.text));
+
+    // 3. Reconstruct
+    const apply = (o) => {
+        if(typeof o === 'string' && map.has(o)) return map.get(o);
+        if(Array.isArray(o)) return o.map(apply);
+        if(typeof o === 'object' && o !== null) {
+            const n = {};
+            for(let k in o) n[k] = apply(o[k]);
+            return n;
+        }
+        return o;
+    };
+    let transObj = apply(obj);
+    let transJson = JSON.stringify(transObj, null, 2);
+
+    // 4. Optional LLM Verification
+    if(ui.verifyToggle.classList.contains('on')) {
+        setTransProgress(70, "Running LLM Verification...");
+        const errors = ui.commonErrorsIn.value;
+        const prefs = ui.prefWordsIn.value;
+        const groqKey = ui.groqKey.value;
+        
+        if(groqKey) {
+            const verifyPrompt = `
+            You are a Translation QA Expert.
+            Task: Correct the Translated JSON based on the Source JSON.
+            
+            Rules:
+            1. Fix these Common Errors: ${errors}
+            2. Use these Preferred Words (word:count): ${prefs}
+            3. Output ONLY the corrected JSON.
+            
+            Source JSON:
+            ${state.groqJson.substring(0, 15000)}... (truncated if too long)
+            
+            Translated JSON (To Fix):
+            ${transJson}
+            `;
+
+            const vRes = await fetch("https://corsproxy.io/?https://api.groq.com/openai/v1/chat/completions", {
+                method: "POST",
+                headers: { "Authorization": `Bearer ${groqKey}`, "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    model: ui.groqModel.value,
+                    messages: [{role:"user", content: verifyPrompt}],
+                    temperature: 0.1,
+                    response_format: { type: "json_object" }
+                })
+            });
+            const vData = await vRes.json();
+            transJson = vData.choices[0].message.content;
+        }
+    }
+
+    state.transOutputRaw = transJson;
+    ui.transOutputPreview.textContent = transJson;
+    setTransProgress(100, "Done");
+    state.step3Done = true;
+    drawFlow();
+
+  } catch(e) {
+    log(e.message, "ERR");
+    setTransProgress(0, "Failed");
+  } finally {
+    ui.btnTransRun.disabled = false;
+  }
+});
+
+ui.btnTransDownload.addEventListener('click', () => {
+    const blob = new Blob([state.transOutputRaw], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'translated.json';
+    a.click();
+});
+
+/**
+ * STEP 4: ASSEMBLY
+ */
+ui.btn3.addEventListener('click', async () => {
+  const src = state.translationEnabled ? state.transOutputRaw : state.groqJson;
+  if(!src) return alert("No JSON available");
+
+  ui.btn3.disabled = true;
+  setProgress(3, 10, "Processing...");
+
+  try {
+    const obj = JSON.parse(src);
+    const quality = parseFloat(document.getElementById('imgQuality').value);
+    const maxW = parseInt(document.getElementById('imgMaxWidth').value);
+    const usedIds = new Set();
+
+    const process = async (node) => {
+        if(typeof node === 'string' && node.includes(CONFIG.phPrefix)) {
+            const id = node.split(CONFIG.phPrefix)[1].split('|')[0];
+            const asset = state.assets.find(a => a.id === id);
+            if(asset) {
+                usedIds.add(id);
+                const b64 = await compressImage(asset.blob, quality, maxW);
+                return { type: 'image', src: b64, width: asset.width };
+            }
+        }
+        if(Array.isArray(node)) return Promise.all(node.map(process));
+        if(typeof node === 'object' && node !== null) {
+            const n = {};
+            for(let k in node) n[k] = await process(node[k]);
+            return n;
+        }
+        return node;
+    };
+
+    const final = await process(obj);
+    
+    // Append unused selected images to 'Info.Images' if exists, or root
+    const unused = state.assets.filter(a => state.selectedImageIds.has(a.id) && !usedIds.has(a.id));
+    if(unused.length) {
+        if(!final.Info) final.Info = {};
+        if(!final.Info.Images) final.Info.Images = [];
+        for(let a of unused) {
+            final.Info.Images.push({ type: 'image', src: await compressImage(a.blob, quality, maxW), width: a.width });
+        }
+    }
+
+    state.finalJson = final;
+    ui.finalOut.textContent = JSON.stringify(final, null, 2);
+    setProgress(3, 100, "Done");
+    state.step4Done = true;
+    drawFlow();
+
+  } catch(e) {
+    log(e.message, "ERR");
+    setProgress(3, 0, "Failed");
+  } finally {
+    ui.btn3.disabled = false;
+  }
+});
+
+function compressImage(blob, q, maxW) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const cvs = document.createElement('canvas');
+      let w = img.width, h = img.height;
+      if(w > maxW) { h = h*(maxW/w); w = maxW; }
+      cvs.width = w; cvs.height = h;
+      const ctx = cvs.getContext('2d');
+      ctx.fillStyle = '#FFF'; ctx.fillRect(0,0,w,h);
+      ctx.drawImage(img,0,0,w,h);
+      resolve(cvs.toDataURL('image/jpeg', q));
+    };
+    img.src = URL.createObjectURL(blob);
+  });
+}
+
+// BTK & Utils
+window.copyToClip = (id) => navigator.clipboard.writeText(document.getElementById(id).textContent);
+ui.btnDl.addEventListener('click', () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(state.finalJson,null,2)], {type:'application/json'}));
+    a.download = 'final_output.json';
+    a.click();
+});
+ui.btnOpenBtkLocal.addEventListener('click', () => {
+    const id = crypto.randomUUID();
+    localStorage.setItem('btk_quote_'+id, JSON.stringify(state.finalJson));
+    window.open(CONFIG.btkUrl + '?quoteId=' + id, '_blank');
+});
+ui.btnOpenBtkUrl.addEventListener('click', () => {
+    const b64 = btoa(String.fromCharCode.apply(null, pako.deflate(JSON.stringify(state.finalJson))));
+    window.open(CONFIG.btkUrl + '#q=' + b64, '_blank');
+});
+
+</script>
+</body>
+</html>
