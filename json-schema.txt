@@ -1,0 +1,175 @@
+# Offert JSON Schema – Version 94 (Offert-webapp)
+# Values in parentheses give default or preset values.
+# IMPORTANT! If you see "d" in the parentheses, then use that value when other info is NOT found.
+# IMPORTANT! If you see "p" in the parentheses, then always use the value in the parentheses even if other info is found.
+
+1. **quote**: Root object for global quote settings and behaviour.
+   - **quoteNumber**: Unique quote ID shown in the UI, e.g. "761325B" (d: auto-generate or reuse from source).
+   - **date**: Quote issue date in ISO format "YYYY-MM-DD", e.g. "2025-11-27" (d: today’s date in "sv-SE").
+   - **projectNumber**: Internal project number, optional, e.g. "P-24031-01" (d: None).
+   - **projectNumberVisible**: Controls if project number is shown (checkbox "Visa Projekt Nummer") (d: false).
+   - **reference**: Free reference text for the offer, e.g. "MARINI VAJERSÅG 100HP, 75HP och BANDVAGN" (d: MARINI MR).
+   - **supplier**: Supplier or manufacturer, e.g. "MARINI QUARRIES GROUP S.R.L. Unipersonale" (d: None).
+   - **currencyOrigin**: Logical base currency of source prices, e.g. "EUR" or "USD" (d: EUR or USD).
+   - **currencyTarget**: Display/target currency for the quote. In the app this is normally SEK (p: SEK).
+   - **currencyMultiplicator**: Single conversion factor used when **useMultipleCurrencies** = false, e.g. 11.8 (p: 11.8 for EUR, 10.8 for USD when nothing else is known).
+   - **marginPercentage**: Global markup or margin in percent for all prices (can be negative for discounts), e.g. 2 (d: 0).
+   - **marginCalculationMode**: How **marginPercentage** is applied (d: "markup").
+       - "markup": target = base * (1 + marginPercentage/100).
+       - "margin": target = base / (1 - marginPercentage/100).
+   - **useMultipleCurrencies**: If true, use separate USD/EUR rates instead of **currencyMultiplicator** (d: false).
+   - **usdToSekRate**: USD→SEK conversion used when **currencyOrigin** = "USD" and **useMultipleCurrencies** = true, e.g. 10.50 (d: 10.50).
+   - **eurToSekRate**: EUR→SEK conversion used when **currencyOrigin** = "EUR" and **useMultipleCurrencies** = true, e.g. 11.50 (d: 11.50).
+   - **showDecimals**: If true, prices are printed with 2 decimals; if false they are rounded to whole units (d: false).
+   - **showSignature**: Controls if the signature block is rendered (checkbox "Lägg till signatur") (d: false).
+   - **showTillSection**: Controls if the "Till:" (To:) block is shown/used in the PDF filename (d: true).
+   - **removeTotal**: If true, hides the total row completely (checkbox "Ta bort totalen") (d: false).
+   - **defaultLogoWidth**: Default logo width in px applied on load, e.g. 200 (d: 200).
+   - **useCustomCurrency**: If true, prices in the UI and total are labelled with **customCurrency** instead of SEK (d: false).
+   - **customCurrency**: Custom currency code text when **useCustomCurrency** = true, e.g. "EUR", "CHF" (d: "EUR").
+   - **centerImagesByDefault**: If true, info images/text blocks use global centering class on print (d: true).
+   - **language**: UI language of the app and labels (not the quote body text) (d: "sv").
+       - "sv": Swedish.
+       - "en": English.
+   - **labels**: Optional label overrides for headings and static text (all strings, optional):
+       - **quoteTitle**: Heading at top, default "Offert" (sv) / "Quote" (en).
+       - **nrHeader**: Column title for item numbers, default "Nr" / "No".
+       - **articleNameHeader**: Column title for main item name, default "Artikel / Namn" / "Article / Name".
+       - **quantityHeader**: Column title for quantity, default "Antal" / "Quantity".
+       - **priceHeader**: Column title for main price column, default "Pris" / "Price".
+       - **optionalItemsHeading**: Heading for optional items section.
+       - **optNrHeader**, **optArticleHeader**, **optQuantityHeader**, **optPriceHeader**: Same as above but for optional items table.
+       - **infoImagesHeading**: Heading for "Info / Bilder".
+       - **termsHeading**: Heading for "Villkor" / "Terms".
+       - **totalLabel**: Label for total row, default "Total:" in both languages.
+       - (Any other UI labels that the app may store as overrides, free-form.)
+   - **visibility**: Section on/off toggles:
+       - **optional**: Show/hide optional items section (d: true).
+       - **info**: Show/hide "Info / Bilder" section (d: true).
+       - **terms**: Show/hide terms section (d: true).
+
+2. **companyA**: Recipient ("Till:") of the quote.
+   - **name**: Company name, e.g., "företagsnamn AB" (d: None).
+   - **address**: Street or address line, e.g., "Ref: Anton" or "Vögenvägen 2" (d: None).
+   - **phoneNumber**: Phone, e.g., "Mob: +46706588000" (d: None).
+   - **postalCode**: Postal code + city, e.g., "218 36 Adress" (d: None).
+   - **attention**: Attention line / contact person(s), e.g., "Att: Byggservice / Anton Mäki" (d: None).
+   - **taxDetails**:
+       - **vatNumber**: VAT number, e.g., "SE5593211400" (d: None).
+   - NOTE: The app flattens all nested values into HTML with <br>; extra custom fields are allowed.
+
+3. **companyB**: Issuing company ("Från:"), usually Betong.
+   - **name**: Company name, e.g., "Betong AB" (p: Betong AB.
+   - **address**: Address line, e.g., "Vägenvägen 2" (p: Vägensvägen 2).
+   - **phoneNumber**: Phone, e.g., "Mob: +46700379400" (p: Mob: +46700379400).
+   - **postalCode**: Postal code + city, e.g., "218 32 Bunkeflos" (p: 218 32 Bunkeflo).
+   - **attention**: Persons responsible, e.g., "Mr. Johan" (p: Johan).
+   - **orgNumber**: Organisation number, e.g., "556931-0000" (p: 556931-0000).
+   - Additional nested fields (email, website, bank, etc.) may be added and will be rendered as extra lines.
+
+4. **items**: Array of main quoted items and separators, in display order.
+   - Each element is either a **normal item** (`type = "item"`) or a **separator** (`type = "separator"`).
+
+   4.1 **Normal item** (type = "item"):
+   - **type**: Must be "item" for a regular quote line (d: "item").
+   - **itemNumber**: Displayed item number, e.g. "1.1", "2.1" (d: auto-generated by app; you may omit).
+   - **name**: Short item name / title, e.g., "Hydraulisk borrutrustning mod. MR-A 1000E" (d: None).
+   - **itemDescription**: Longer description of the item, may contain HTML (<strong>, <ul>, <br>, etc.) (d: None).
+   - **quantity**: Item quantity (integer ≥ 0), e.g., 1, 2, 10 (d: 1).
+   - **originalPrice**: Price per unit in **currencyOrigin** before any margins, e.g., 600000 (d: 0).
+   - **targetPrice**: Final line amount in SEK (or **customCurrency**), after currency conversion and margins.
+       - In the app this is calculated; when generating JSON, set to 0 and let the app recompute (d: 0).
+   - **marginPercentage**: Local margin or discount for this line only (applied before global margin), e.g., 0, 5, -10 (d: 0).
+   - **currencyOrigin**: Currency code of **originalPrice**, e.g., "EUR", "USD", "SEK" (d: same as quote.currencyOrigin, typically EUR or USD).
+   - **isPriceBakedIn**: If true, this item’s price is hidden and baked into other visible items (d: false).
+   - **isHiddenFromPrint**: If true, line is hidden in print and its price is treated as baked-in (d: false).
+   - **vendorNotes**: Internal notes shown only in vendor mode (not to client), plain text or simple HTML (d: empty string).
+   - **subItems**: Array of sub-items (included components) that belong under this main item (d: empty array).
+
+   4.2 **Sub-item** inside **subItems**:
+   - **subItemNumber**: Displayed sub-number, e.g., "1.1.1", "2.1.3" (d: auto-generated; may be omitted).
+   - **subItemName**: Sub-item title, e.g., "Hydraulic rotary head ID160" (d: None).
+   - **subItemDescription**: Longer description, HTML allowed, e.g., "API 2 3/8\" BOX" (d: None).
+   - **subItemQuantity**: Quantity (integer ≥ 0) (d: 1).
+   - **subItemOriginalPrice**: Original price per unit for the sub-item in **currencyOrigin**, e.g., 5700.00 (d: 0).
+   - **subItemTargetPrice**: Final line amount for sub-item after conversion and margins (d: 0; app recalculates).
+   - **marginPercentage**: Local margin/discount for this sub-item (d: 0).
+   - **currencyOrigin**: Currency for **subItemOriginalPrice**, defaults to parent item currency (d: parent currencyOrigin).
+   - **isPriceBakedIn**: If true, this sub-item’s price is baked into the parent or other visible positions (d: false).
+   - **isHiddenFromPrint**: If true, this sub-item is hidden in print and treated as baked-in (d: false).
+   - **vendorNotes**: Internal notes for vendor-only print (d: empty string).
+
+   4.3 **Separator item** (type = "separator"):
+   - **type**: Must be "separator".
+   - **id**: Unique ID such as "sep-<timestamp>" (d: auto-generated).
+   - Other fields are ignored by the app; this creates a visual separator and optional page-break marker.
+
+5. **optionalItems**: Array with the same structure as **items**, but used for optional / alternative articles.
+   - Follows exactly the same object layout as a normal **items** element (type "item" or "separator").
+   - In UI these are listed under heading "Alternativ / Ytterligare Artiklar".
+   - Item numbers are usually prefixed logically (e.g. "A1.1", "A2.1") by the app; you may omit **itemNumber** and let the app renumber.
+
+6. **terms**: List of terms and conditions as rich-text strings (one per row).
+   - Type: array of strings, each entry is an HTML snippet rendered as a single line/paragraph.
+   - Example structure:
+       - "<strong>Offertens giltighet:</strong> 30 dagar från offertdatum."
+       - "<strong>Betalningsvillkor:</strong> 50% vid beställning, 40% vid leverans från fabrik och resterande 10% efter mottagningskontroll (inom 5 arbetsdagar)."
+       - "<strong>Moms och frakt:</strong> Tillkommer."
+       - "<strong>Valutaklausul:</strong> Vi reserverar oss för kraftiga valutaförändringar."
+       - "<strong>Garanti:</strong> 12 månader enligt standardvillkor."
+       - "<strong>Leveransvillkor:</strong> Fritt fabrik enligt avtal."
+   - Recommended presets when you need standard Swedish text (p = prefer these when user has not specified their own):
+       - Term 1 (p): "<strong>Offertens giltighet:</strong> 30 dagar från offertdatum."
+       - Term 2 (p): "<strong>Betalningsvillkor:</strong> 50% vid beställning, 40% vid leverans från fabrik och resterande 10% efter mottagningskontroll (inom 5 arbetsdagar)."
+       - Term 3 (p): "<strong>Moms och frakt:</strong> Tillkommer."
+       - Term 4 (p): "<strong>Valutaklausul:</strong> Vi reserverar oss för kraftiga valutaförändringar."
+       - Term 5 (d): "<strong>Garanti:</strong> 12 månader enligt standardvillkor."
+       - Term 6 (d): "<strong>Leveransvillkor:</strong> Cirka 160–180 arbetsdagar beroende på tillgänglighet, fritt fabrik enligt avtal."
+
+7. **infoImages**: Mixed content section for images, text blocks, tables and explicit page breaks.
+   - This is an array; each element has a **type** that defines its shape.
+
+   7.1 **Image block** (type = "image"):
+   - **type**: "image".
+   - **src**: Image source, usually a base64 data URL ("data:image/jpeg;base64,...") or a normal URL (d: None, REQUIRED when type="image").
+   - **width**: Display width in px, used for image sizing, e.g., 400 (d: 400).
+   - **description**: Optional unused/legacy description text, safe to leave empty (d: empty or None).
+   - **compressionImmune**: If true, this image is skipped when running automatic compression/recompression (d: false).
+   - **quality**: Optional field tracking JPEG quality used in last compression, between 0.1 and 1.0 (d: 0.8 if unknown).
+   - **centering**: Alignment hint for this block (d: "default").
+       - "default": Follow global **centerImagesByDefault** behaviour.
+       - "center": Force centered.
+       - "left": Force left-aligned.
+
+   7.2 **Text block** (type = "text"):
+   - **type**: "text".
+   - **content**: HTML content for the text block (paragraphs, lists, etc.) (d: "Klicka för att redigera text" or English equivalent).
+   - **centering**: Same as for images ("default" | "center" | "left") (d: "left").
+
+   7.3 **Table block** (type = "table"):
+   - **type**: "table".
+   - **rows**: Number of rows (integer ≥ 1).
+   - **cols**: Number of columns (integer ≥ 1).
+   - **data**: 2D array of strings, accessed as data[rowIndex][colIndex].
+       - If some cells are missing, the app will treat them as empty strings.
+   - **centering**: Alignment hint, usually "default" (d: "default").
+
+   7.4 **Page break marker** (type = "page-break"):
+   - **type**: "page-break".
+   - No additional fields required; used to force a page-break in PDF/print.
+   - Screen UI shows a dashed box "SIDBRYTNING", but on print it's only a break.
+
+8. **signature**: Signature section content (used when **quote.showSignature** = true).
+   - **date**: Contents of the date field in the signature section; often left as a line of spaces to sign on, or a pre-filled date (d: non-breaking spaces / empty).
+   - **lessorLine**: Text above the "Uthyrare" / "Lessor" label, usually a name or blank line (d: empty).
+   - **lesseeLine**: Text above the "Hyrestagare" / "Lessee" label (d: empty).
+   - **lessorText**: Label under left signature line (d: "Uthyrare" in sv, "Lessor" in en).
+   - **lesseeText**: Label under right signature line (d: "Hyrestagare" in sv, "Lessee" in en).
+
+# General notes
+- All numeric prices should use dot as decimal separator (e.g. 11.5, 5700.00).
+- HTML is allowed inside description-like fields (**itemDescription**, **subItemDescription**, **terms[]**, **infoImages[].content**).
+- When generating JSON for the app, it is safe to:
+  - Set all computed target prices (**targetPrice**, **subItemTargetPrice**) to 0.
+  - Omit **itemNumber** / **subItemNumber** and let the app renumber automatically.
+  - Omit optional fields; the app will backfill defaults as described above.
