@@ -1177,7 +1177,7 @@ ui.btnTransRun.addEventListener('click', async () => {
         const res = await fetch(endpoint, {
             method: 'POST',
             headers: { 
-                'Authorization': `DeepL-Auth-Key ${key}`,
+                'Authorization': `DeepL-Auth-Key ${key.trim()}`,
                 'Content-Type': 'application/json' 
             },
             body: JSON.stringify({
@@ -1506,8 +1506,16 @@ function compressImage(blob, doCompress, quality, maxWidth) {
 // BTK & Utils
 window.copyToClip = (id) => {
     const el = document.getElementById(id);
+    if (!el) return;
     const txt = el.value || el.textContent;
-    navigator.clipboard.writeText(txt);
+    navigator.clipboard.writeText(txt).then(() => {
+        const btn = document.activeElement;
+        if(btn && btn.tagName === 'BUTTON') {
+            const original = btn.textContent;
+            btn.textContent = "Copied!";
+            setTimeout(() => btn.textContent = original, 1500);
+        }
+    });
     log("Copied to clipboard");
 };
 
