@@ -236,7 +236,6 @@
         </div>
 
         <label style="margin-top:10px">Markdown Output (Editable)</label>
-        <!-- Changed to Textarea for Editability -->
         <textarea id="mdOutput" class="preview-box" style="height:300px; resize:vertical;"></textarea>
       </div>
     </div>
@@ -320,9 +319,13 @@
     <div class="card" style="flex:1">
       <div class="card-head">
         <span class="card-title">Structured JSON</span>
-        <button style="width:auto; padding:2px 8px; font-size:10px" onclick="copyToClip('jsonOutput')">Copy</button>
+        <div style="display:flex; gap:5px">
+            <button style="width:auto; padding:2px 8px; font-size:10px" onclick="document.getElementById('debugRequest').classList.toggle('hidden')">Debug Req</button>
+            <button style="width:auto; padding:2px 8px; font-size:10px" onclick="copyToClip('jsonOutput')">Copy</button>
+        </div>
       </div>
       <div class="card-body" style="flex:1; overflow:hidden;">
+        <div id="debugRequest" class="preview-box hidden" style="height:150px; border-bottom:1px solid var(--line); margin-bottom:10px; color:var(--accent);"></div>
         <div id="jsonOutput" class="preview-box" style="height:100%"></div>
       </div>
     </div>
@@ -375,7 +378,14 @@
                 <div id="verifyToggle" class="switch on"></div>
             </div>
             
-            <label>Common Errors (Text or File)</label>
+            <label>Verification Model</label>
+            <select id="verifyModel">
+                <option value="openai/gpt-oss-120b" selected>openai/gpt-oss-120b</option>
+                <option value="llama-3.3-70b-versatile">llama-3.3-70b</option>
+                <option value="mixtral-8x7b-32768">mixtral-8x7b</option>
+            </select>
+
+            <label style="margin-top:5px">Common Errors (Text or File)</label>
             <div style="display:flex; gap:5px; margin-bottom:5px;">
                 <input type="file" id="commonErrorsFile" accept=".txt" style="width:100%">
             </div>
@@ -531,6 +541,7 @@ const ui = {
   schemaIn: document.getElementById('schemaInput'),
   btn2: document.getElementById('btnStep2'),
   jsonOut: document.getElementById('jsonOutput'),
+  debugRequest: document.getElementById('debugRequest'),
   groqModel: document.getElementById('groqModel'),
   reasoningEffort: document.getElementById('reasoningEffort'),
   corsToggle: document.getElementById('corsToggle'),
@@ -541,6 +552,7 @@ const ui = {
   deeplKey: document.getElementById('deeplKey'),
   deeplTarget: document.getElementById('deeplTarget'),
   verifyToggle: document.getElementById('verifyToggle'),
+  verifyModel: document.getElementById('verifyModel'),
   commonErrorsIn: document.getElementById('commonErrorsInput'),
   prefWordsIn: document.getElementById('prefWordsInput'),
   btnTransRun: document.getElementById('btnTransRun'),
@@ -1016,61 +1028,88 @@ async function runDeepSeekOCR(file, signal) {
 /**
  * STEP 2: GROQ STRUCTURING
  */
+function cleanJson(str) {
+  if (!str) return "";
+  return str.replace(/```json/g, '').replace(/```/g, '').trim();
+}
+
 ui.btn2.addEventListener('click', async () => {
   const key = ui.groqKey.value;
   const schema = ui.schemaIn.value;
-  if(!key || !schema) return alert("API Key and Schema required");
+  if(!key) return alert("API Key required");
+  if(!schema) return alert("Schema required");
 
   ui.btn2.disabled = true;
   setProgress(2, 10, "Preparing Request...");
   
-  const model = ui.groqModel.value;
-  const reasoning = ui.reasoningEffort.value;
-  const useProxy = ui.corsToggle.classList.contains('on');
+  const model = document.getElementById('groqModel').value;
+  const reasoningEffort = document.getElementById('reasoningEffort').value;
+  const useProxy = document.getElementById('corsToggle').classList.contains('on');
   const prompt = document.getElementById('groqPrompt').value;
 
   const messages = [
     { role: "system", content: "You are a data extraction assistant. Output valid JSON only." },
     { role: "user", content: `JSON Schema:\n${schema}` },
-    { role: "user", content: `Text:\n${state.markdown}` },
+    { role: "user", content: `Text with Image Placeholders:\n${state.markdown}` },
     { role: "user", content: prompt }
   ];
 
   try {
     setProgress(2, 40, "Waiting for LLM...");
+    
     let url = "https://api.groq.com/openai/v1/chat/completions";
     if(useProxy) url = "https://corsproxy.io/?" + encodeURIComponent(url);
 
+    // Construct Payload
     const payload = {
         model: model,
         messages: messages,
-        temperature: 0.2,
-        max_completion_tokens: 8192,
+        temperature: 0.2, 
         top_p: 1,
+        max_completion_tokens: 8192,
         stream: false,
         response_format: { type: "json_object" }
     };
-    
-    // Add reasoning effort if enabled (top level param for O1-like models)
-    if(reasoning !== 'disabled') {
-        payload.reasoning_effort = reasoning;
+
+    // Add reasoning_effort if model is 120b (assuming it supports it via this param)
+    if (model === 'openai/gpt-oss-120b' && reasoningEffort !== 'disabled') {
+        payload.reasoning_effort = reasoningEffort;
     }
+
+    // DEBUG: Show Request
+    ui.debugRequest.textContent = JSON.stringify(payload, null, 2);
 
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+      headers: {
+        "Authorization": `Bearer ${key}`,
+        "Content-Type": "application/json"
+      },
       body: JSON.stringify(payload)
     });
 
     if(!res.ok) throw new Error(`Groq API Error: ${res.status}`);
-    const data = await res.json();
-    state.groqJson = data.choices[0].message.content;
-    ui.jsonOut.textContent = JSON.stringify(JSON.parse(state.groqJson), null, 2);
     
-    setProgress(2, 100, "Complete");
+    const data = await res.json();
+    let content = data.choices[0].message.content;
+    
+    // Clean JSON before storing
+    content = cleanJson(content);
+    
+    // Keep the raw JSON string as returned by the LLM
+    state.groqJson = content;
+    
+    // Pretty-print JSON for display
+    ui.jsonOut.textContent = JSON.stringify(JSON.parse(content), null, 2);
+    
+    setProgress(2, 100, "Structuring Complete");
+    log("Step 2 Complete", "SUCCESS");
+    
     state.step2Done = true;
     drawFlow();
+    
     ui.btn3.disabled = false;
+
   } catch(e) {
     log(e.message, "ERR");
     setProgress(2, 0, "Failed");
@@ -1162,6 +1201,7 @@ ui.btnTransRun.addEventListener('click', async () => {
         const errors = ui.commonErrorsIn.value;
         const prefs = ui.prefWordsIn.value;
         const groqKey = ui.groqKey.value;
+        const verifyModel = document.getElementById('verifyModel').value;
         
         if(groqKey) {
             const verifyPrompt = `
@@ -1188,7 +1228,7 @@ ui.btnTransRun.addEventListener('click', async () => {
                 method: "POST",
                 headers: { "Authorization": `Bearer ${groqKey}`, "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    model: ui.groqModel.value,
+                    model: verifyModel,
                     messages: [{role:"user", content: verifyPrompt}],
                     temperature: 0.1,
                     response_format: { type: "json_object" }
@@ -1222,7 +1262,7 @@ ui.btnTransDownload.addEventListener('click', () => {
 });
 
 /**
- * STEP 4: ASSEMBLY
+ * STEP 4: ASSEMBLY (Context-Aware Injection)
  */
 ui.btn3.addEventListener('click', async () => {
   const src = state.translationEnabled ? state.transOutputRaw : state.groqJson;
@@ -1243,58 +1283,114 @@ ui.btn3.addEventListener('click', async () => {
     // Helper to extract ID from placeholder
     const extractId = (ph) => ph.replace(CONFIG.phPrefix, '').replace(CONFIG.phSuffix, '').split('|')[0];
 
-    const process = async (node) => {
-        // Case 1: String is exactly a placeholder
-        if(isPlaceholder(node)) {
+    // Recursive walker that is Context-Aware
+    const processNode = async (node, parentKey = null) => {
+      if (Array.isArray(node)) {
+        const res = await Promise.all(node.map(item => processNode(item, parentKey)));
+        return res;
+      } 
+      else if (typeof node === 'object' && node !== null) {
+        // OBJECTIVE 2: Check if this is a "Text Block" that is actually an "Image Placeholder"
+        if (node.type === 'text' && isPlaceholder(node.content)) {
+            const id = extractId(node.content);
+            const asset = state.assets.find(a => a.id === id);
+            if (asset) {
+                usedIds.add(id);
+                const b64 = await compressImage(asset.blob, true, quality, maxW);
+                // Convert to Image Block Structure
+                return {
+                    type: 'image',
+                    src: b64,
+                    width: asset.width, 
+                    description: '',
+                    compressionImmune: false,
+                    centering: node.centering || 'default'
+                };
+            }
+        }
+
+        const newObj = {};
+        for (const [key, val] of Object.entries(node)) {
+           newObj[key] = await processNode(val, key);
+        }
+        return newObj;
+      }
+      else if (typeof node === 'string') {
+        if (isPlaceholder(node)) {
             const id = extractId(node);
             const asset = state.assets.find(a => a.id === id);
-            if(asset) {
+            if (asset) {
                 usedIds.add(id);
-                const b64 = await compressImage(asset.blob, quality, maxW);
-                return { type: 'image', src: b64, width: asset.width };
+                // ALWAYS compress/convert to JPEG to ensure manageable size
+                const b64 = await compressImage(asset.blob, true, quality, maxW);
+                
+                // Context Check using parentKey
+                const isSource = parentKey && ['src', 'url', 'href', 'data'].includes(parentKey.toLowerCase());
+                
+                if (isSource) {
+                    return b64;
+                } else {
+                    return {
+                        type: 'image',
+                        src: b64,
+                        width: asset.width,
+                        description: '',
+                        compressionImmune: false,
+                        centering: 'default'
+                    };
+                }
             }
-            return node; // Asset not found
-        }
-        
-        // Case 2: Array
-        if(Array.isArray(node)) return Promise.all(node.map(process));
-        
-        // Case 3: Object
-        if(typeof node === 'object' && node !== null) {
-            // Check if this object is actually a "Text Block" that contains a placeholder in its content/text field
-            // Some LLMs put the placeholder in a 'content' field of a text block
-            if(node.type === 'text' && isPlaceholder(node.content)) {
-                 const id = extractId(node.content);
-                 const asset = state.assets.find(a => a.id === id);
-                 if(asset) {
-                    usedIds.add(id);
-                    const b64 = await compressImage(asset.blob, quality, maxW);
-                    return { type: 'image', src: b64, width: asset.width };
-                 }
-            }
-
-            const n = {};
-            for(let k in node) n[k] = await process(node[k]);
-            return n;
+            // Asset not found? Return original string
+            return node; 
         }
         return node;
+      }
+      return node;
     };
 
-    const final = await process(obj);
+    setProgress(3, 30, "Processing Images...");
+    let processedJson = await processNode(obj);
+
+    // FALLBACK: Inject unused images into Info.Images or Info.Bilder
+    // Only consider images that were SELECTED in Step 1
+    const validAssets = state.assets.filter(a => state.selectedImageIds.has(a.id));
+    const unusedAssets = validAssets.filter(a => !usedIds.has(a.id));
     
-    // Append unused selected images to 'Info.Images' if exists, or root
-    const unused = state.assets.filter(a => state.selectedImageIds.has(a.id) && !usedIds.has(a.id));
-    if(unused.length) {
-        if(!final.Info) final.Info = {};
-        if(!final.Info.Images) final.Info.Images = [];
-        for(let a of unused) {
-            final.Info.Images.push({ type: 'image', src: await compressImage(a.blob, quality, maxW), width: a.width });
-        }
+    if(unusedAssets.length > 0) {
+      log(`Injecting ${unusedAssets.length} missing images into Info...`, "WARN");
+      
+      if(!processedJson.Info) processedJson.Info = {};
+      
+      let targetArray = null;
+      if(Array.isArray(processedJson.Info.Images)) targetArray = processedJson.Info.Images;
+      else if(Array.isArray(processedJson.Info.Bilder)) targetArray = processedJson.Info.Bilder;
+      else {
+        processedJson.Info.Images = [];
+        targetArray = processedJson.Info.Images;
+      }
+
+      for(const asset of unusedAssets) {
+        const b64 = await compressImage(asset.blob, true, quality, maxW);
+        targetArray.push({
+          type: 'image',
+          src: b64,
+          width: asset.width,
+          description: '',
+          compressionImmune: false,
+          centering: 'default'
+        });
+      }
     }
 
-    state.finalJson = final;
-    ui.finalOut.textContent = JSON.stringify(final, null, 2);
-    setProgress(3, 100, "Done");
+    // --- STRICT SANITIZATION ---
+    state.finalJson = sanitizeFinalJson(processedJson);
+    
+    const jsonStr = JSON.stringify(state.finalJson, null, 2);
+    ui.finalOut.textContent = jsonStr;
+    
+    setProgress(3, 100, "Assembly Complete");
+    log("Step 4 Complete", "SUCCESS");
+    
     state.step4Done = true;
     drawFlow();
 
@@ -1306,20 +1402,75 @@ ui.btn3.addEventListener('click', async () => {
   }
 });
 
-function compressImage(blob, q, maxW) {
-  return new Promise(resolve => {
-    const img = new Image();
-    img.onload = () => {
-      const cvs = document.createElement('canvas');
-      let w = img.width, h = img.height;
-      if(w > maxW) { h = h*(maxW/w); w = maxW; }
-      cvs.width = w; cvs.height = h;
-      const ctx = cvs.getContext('2d');
-      ctx.fillStyle = '#FFF'; ctx.fillRect(0,0,w,h);
-      ctx.drawImage(img,0,0,w,h);
-      resolve(cvs.toDataURL('image/jpeg', q));
+// --- Sanitizer Function ---
+function sanitizeFinalJson(data) {
+  if (!data || typeof data !== 'object') data = {};
+  if (!data.quote) data.quote = {};
+  
+  // Helper to fix items array
+  const fixItems = (arr) => {
+    if (!Array.isArray(arr)) return [];
+    // Filter out nulls and non-objects
+    return arr.filter(i => i && typeof i === 'object').map(item => {
+      // Fix subItems: Must be an array
+      if (item.subItems && !Array.isArray(item.subItems)) {
+        if (typeof item.subItems === 'object') item.subItems = [item.subItems];
+        else item.subItems = [];
+      }
+      if (!item.subItems) item.subItems = [];
+      return item;
+    });
+  };
+
+  if (data.items) data.items = fixItems(data.items);
+  else data.items = [];
+
+  if (data.optionalItems) data.optionalItems = fixItems(data.optionalItems);
+  else data.optionalItems = [];
+  
+  // Fix InfoImages
+  if (data.infoImages && !Array.isArray(data.infoImages)) {
+     if (typeof data.infoImages === 'object') data.infoImages = [data.infoImages];
+     else data.infoImages = [];
+  }
+  if (data.infoImages) {
+    data.infoImages = data.infoImages.filter(i => i && typeof i === 'object');
+  } else {
+    data.infoImages = [];
+  }
+
+  // Ensure Company Objects are Objects (not strings)
+  if (data.companyA && typeof data.companyA !== 'object') data.companyA = { name: String(data.companyA) };
+  if (data.companyB && typeof data.companyB !== 'object') data.companyB = { name: String(data.companyB) };
+
+  return data;
+}
+
+function compressImage(blob, doCompress, quality, maxWidth) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      if(!doCompress) return resolve(e.target.result);
+      
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let w = img.width, h = img.height;
+        if(w > maxWidth) {
+          h = Math.round(h * (maxWidth/w));
+          w = maxWidth;
+        }
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#FFFFFF'; 
+        ctx.fillRect(0,0,w,h);
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
     };
-    img.src = URL.createObjectURL(blob);
+    reader.readAsDataURL(blob);
   });
 }
 
