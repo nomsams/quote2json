@@ -321,11 +321,13 @@
         <span class="card-title">Structured JSON</span>
         <div style="display:flex; gap:5px">
             <button style="width:auto; padding:2px 8px; font-size:10px" onclick="document.getElementById('debugRequest').classList.toggle('hidden')">Debug Req</button>
+            <button style="width:auto; padding:2px 8px; font-size:10px" onclick="document.getElementById('groqRawOutput').classList.toggle('hidden')">Show Raw</button>
             <button style="width:auto; padding:2px 8px; font-size:10px" onclick="copyToClip('jsonOutput')">Copy</button>
         </div>
       </div>
       <div class="card-body" style="flex:1; overflow:hidden;">
         <div id="debugRequest" class="preview-box hidden" style="height:150px; border-bottom:1px solid var(--line); margin-bottom:10px; color:var(--accent);"></div>
+        <div id="groqRawOutput" class="preview-box hidden" style="height:150px; border-bottom:1px solid var(--line); margin-bottom:10px; color:var(--warn);"></div>
         <div id="jsonOutput" class="preview-box" style="height:100%"></div>
       </div>
     </div>
@@ -542,6 +544,7 @@ const ui = {
   btn2: document.getElementById('btnStep2'),
   jsonOut: document.getElementById('jsonOutput'),
   debugRequest: document.getElementById('debugRequest'),
+  groqRawOutput: document.getElementById('groqRawOutput'),
   groqModel: document.getElementById('groqModel'),
   reasoningEffort: document.getElementById('reasoningEffort'),
   corsToggle: document.getElementById('corsToggle'),
@@ -1066,14 +1069,18 @@ ui.btn2.addEventListener('click', async () => {
         messages: messages,
         temperature: 0.2, 
         top_p: 1,
-        max_completion_tokens: 8192,
         stream: false,
         response_format: { type: "json_object" }
     };
 
-    // Add reasoning_effort if model is 120b (assuming it supports it via this param)
-    if (model === 'openai/gpt-oss-120b' && reasoningEffort !== 'disabled') {
-        payload.reasoning_effort = reasoningEffort;
+    // Model Specific Adjustments
+    if (model === 'openai/gpt-oss-120b') {
+        payload.max_completion_tokens = 65536;
+        if (reasoningEffort !== 'disabled') {
+            payload.reasoning_effort = reasoningEffort;
+        }
+    } else {
+        payload.max_completion_tokens = 8192;
     }
 
     // DEBUG: Show Request
@@ -1093,6 +1100,9 @@ ui.btn2.addEventListener('click', async () => {
     const data = await res.json();
     let content = data.choices[0].message.content;
     
+    // Show Raw Output
+    ui.groqRawOutput.textContent = content;
+
     // Clean JSON before storing
     content = cleanJson(content);
     
@@ -1100,7 +1110,11 @@ ui.btn2.addEventListener('click', async () => {
     state.groqJson = content;
     
     // Pretty-print JSON for display
-    ui.jsonOut.textContent = JSON.stringify(JSON.parse(content), null, 2);
+    try {
+        ui.jsonOut.textContent = JSON.stringify(JSON.parse(content), null, 2);
+    } catch(e) {
+        ui.jsonOut.textContent = content; // Fallback if parsing fails
+    }
     
     setProgress(2, 100, "Structuring Complete");
     log("Step 2 Complete", "SUCCESS");
@@ -1202,6 +1216,7 @@ ui.btnTransRun.addEventListener('click', async () => {
         const prefs = ui.prefWordsIn.value;
         const groqKey = ui.groqKey.value;
         const verifyModel = document.getElementById('verifyModel').value;
+        const reasoningEffort = document.getElementById('reasoningEffort').value;
         
         if(groqKey) {
             const verifyPrompt = `
@@ -1224,15 +1239,29 @@ ui.btnTransRun.addEventListener('click', async () => {
             let gUrl = "https://api.groq.com/openai/v1/chat/completions";
             if(useGroqProxy) gUrl = "https://corsproxy.io/?" + encodeURIComponent(gUrl);
 
+            // Construct Verification Payload (Same logic as Step 2)
+            const vPayload = {
+                model: verifyModel,
+                messages: [{role:"user", content: verifyPrompt}],
+                temperature: 0.1,
+                top_p: 1,
+                stream: false,
+                response_format: { type: "json_object" }
+            };
+
+            if (verifyModel === 'openai/gpt-oss-120b') {
+                vPayload.max_completion_tokens = 65536;
+                if (reasoningEffort !== 'disabled') {
+                    vPayload.reasoning_effort = reasoningEffort;
+                }
+            } else {
+                vPayload.max_completion_tokens = 8192;
+            }
+
             const vRes = await fetch(gUrl, {
                 method: "POST",
                 headers: { "Authorization": `Bearer ${groqKey}`, "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    model: verifyModel,
-                    messages: [{role:"user", content: verifyPrompt}],
-                    temperature: 0.1,
-                    response_format: { type: "json_object" }
-                })
+                body: JSON.stringify(vPayload)
             });
             const vData = await vRes.json();
             transJson = vData.choices[0].message.content;
@@ -1475,7 +1504,13 @@ function compressImage(blob, doCompress, quality, maxWidth) {
 }
 
 // BTK & Utils
-window.copyToClip = (id) => navigator.clipboard.writeText(document.getElementById(id).textContent);
+window.copyToClip = (id) => {
+    const el = document.getElementById(id);
+    const txt = el.value || el.textContent;
+    navigator.clipboard.writeText(txt);
+    log("Copied to clipboard");
+};
+
 ui.btnDl.addEventListener('click', () => {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([JSON.stringify(state.finalJson,null,2)], {type:'application/json'}));
