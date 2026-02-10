@@ -235,8 +235,9 @@
             <button id="btnNextPage" disabled>Next</button>
         </div>
 
-        <label style="margin-top:10px">Markdown Output (Placeholders Injected)</label>
-        <div id="mdOutput" class="preview-box" style="height:300px"></div>
+        <label style="margin-top:10px">Markdown Output (Editable)</label>
+        <!-- Changed to Textarea for Editability -->
+        <textarea id="mdOutput" class="preview-box" style="height:300px; resize:vertical;"></textarea>
       </div>
     </div>
   </div>
@@ -261,7 +262,7 @@
           <div style="flex:1">
             <label>Model</label>
             <select id="groqModel">
-              <option value="deepseek-r1-distill-llama-70b" selected>DeepSeek R1 (Open Reasoning)</option>
+              <option value="openai/gpt-oss-120b" selected>openai/gpt-oss-120b (High Reasoning)</option>
               <option value="llama-3.3-70b-versatile">llama-3.3-70b (Versatile)</option>
               <option value="mixtral-8x7b-32768">mixtral-8x7b</option>
               <option value="gemma2-9b-it">gemma2-9b</option>
@@ -486,7 +487,7 @@ const CONFIG = {
   phSuffix: '}}',
   btkUrl: 'https://nomsams.github.io/btk/',
   allowedRatios: [9/16, 16/9, 1/1, 4/3, 3/4],
-  galleryPerPage: 50 // Pagination limit
+  galleryPerPage: 24 // Reduced to 24 for better visibility
 };
 
 const state = {
@@ -594,7 +595,6 @@ const ui = {
   // Load Schema (Try multiple paths)
   const loadSchema = async () => {
     try {
-      // Try json.schema.txt first (as requested), then json-schema.txt, then json
       const paths = ['json.schema.txt', 'json-schema.txt', 'json-schema.json'];
       let content = null;
       
@@ -641,6 +641,11 @@ const ui = {
   // Pagination Listeners
   ui.btnPrevPage.addEventListener('click', () => changeGalleryPage(-1));
   ui.btnNextPage.addEventListener('click', () => changeGalleryPage(1));
+
+  // Markdown Edit Listener
+  ui.mdOut.addEventListener('input', (e) => {
+    state.markdown = e.target.value;
+  });
 
   window.addEventListener('resize', drawFlow);
   setTimeout(drawFlow, 500);
@@ -808,7 +813,7 @@ function resetStep1() {
   state.rawDeepSeekText = "";
   state.markdown = "";
   ui.gallery.innerHTML = "";
-  ui.mdOut.innerHTML = "";
+  ui.mdOut.value = "";
   state.step1Done = false;
   drawFlow();
 }
@@ -946,7 +951,7 @@ function updateMarkdownOutput() {
         });
     }
     state.markdown = md.trim();
-    ui.mdOut.innerHTML = state.markdown.replace(/{{IMG:[^}]+}}/g, '<span class="ph-tag">$&</span>');
+    ui.mdOut.value = state.markdown;
 }
 
 // --- Local Processing ---
@@ -1039,15 +1044,16 @@ ui.btn2.addEventListener('click', async () => {
     const payload = {
         model: model,
         messages: messages,
-        temperature: 0.1,
+        temperature: 0.2,
+        max_completion_tokens: 8192,
+        top_p: 1,
+        stream: false,
         response_format: { type: "json_object" }
     };
     
-    // Add reasoning if supported by model (DeepSeek R1 on Groq usually handles this via model ID, 
-    // but we can pass reasoning_format if API supports it, or just rely on the model)
-    if(reasoning !== 'disabled' && (model.includes('deepseek') || model.includes('120b'))) {
-        // Some endpoints use reasoning_format, others just imply it. 
-        // We'll leave standard params.
+    // Add reasoning effort if enabled (top level param for O1-like models)
+    if(reasoning !== 'disabled') {
+        payload.reasoning_effort = reasoning;
     }
 
     const res = await fetch(url, {
@@ -1231,18 +1237,42 @@ ui.btn3.addEventListener('click', async () => {
     const maxW = parseInt(document.getElementById('imgMaxWidth').value);
     const usedIds = new Set();
 
+    // Helper to check if a string is a placeholder
+    const isPlaceholder = (str) => typeof str === 'string' && str.startsWith(CONFIG.phPrefix) && str.endsWith(CONFIG.phSuffix);
+    
+    // Helper to extract ID from placeholder
+    const extractId = (ph) => ph.replace(CONFIG.phPrefix, '').replace(CONFIG.phSuffix, '').split('|')[0];
+
     const process = async (node) => {
-        if(typeof node === 'string' && node.includes(CONFIG.phPrefix)) {
-            const id = node.split(CONFIG.phPrefix)[1].split('|')[0];
+        // Case 1: String is exactly a placeholder
+        if(isPlaceholder(node)) {
+            const id = extractId(node);
             const asset = state.assets.find(a => a.id === id);
             if(asset) {
                 usedIds.add(id);
                 const b64 = await compressImage(asset.blob, quality, maxW);
                 return { type: 'image', src: b64, width: asset.width };
             }
+            return node; // Asset not found
         }
+        
+        // Case 2: Array
         if(Array.isArray(node)) return Promise.all(node.map(process));
+        
+        // Case 3: Object
         if(typeof node === 'object' && node !== null) {
+            // Check if this object is actually a "Text Block" that contains a placeholder in its content/text field
+            // Some LLMs put the placeholder in a 'content' field of a text block
+            if(node.type === 'text' && isPlaceholder(node.content)) {
+                 const id = extractId(node.content);
+                 const asset = state.assets.find(a => a.id === id);
+                 if(asset) {
+                    usedIds.add(id);
+                    const b64 = await compressImage(asset.blob, quality, maxW);
+                    return { type: 'image', src: b64, width: asset.width };
+                 }
+            }
+
             const n = {};
             for(let k in node) n[k] = await process(node[k]);
             return n;
