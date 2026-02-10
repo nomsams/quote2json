@@ -121,6 +121,11 @@
     .thumb-check { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; background: var(--ok); border-radius: 50%; display: none; align-items: center; justify-content: center; font-size: 10px; color: #000; font-weight: bold; }
     .thumb.selected .thumb-check { display: flex; }
 
+    /* Pagination Controls */
+    .pagination-controls { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; padding: 4px; background: var(--muted-2); border-radius: 6px; }
+    .pagination-controls button { width: auto; padding: 4px 12px; font-size: 11px; }
+    .pagination-info { font-size: 11px; color: var(--text-dim); font-weight: 600; }
+
     #logs { position: fixed; bottom: 0; left: 0; right: 0; height: 200px; background: var(--panel); border-top: 1px solid var(--line); z-index: 200; display: flex; flex-direction: column; transition: transform 0.3s; box-shadow: 0 -5px 20px rgba(0,0,0,0.5); }
     #logs.minimized { transform: translateY(165px); }
     .log-head { padding: 8px 20px; background: var(--muted-2); font-size: 12px; font-weight: 700; display: flex; justify-content: space-between; cursor: pointer; }
@@ -222,6 +227,14 @@
       </div>
       <div class="card-body" style="flex:1; overflow:hidden;">
         <div id="gallery" class="gallery"></div>
+        
+        <!-- Pagination Controls -->
+        <div id="galleryPagination" class="pagination-controls hidden">
+            <button id="btnPrevPage" disabled>Previous</button>
+            <span id="pageIndicator" class="pagination-info">Page 1 / 1</span>
+            <button id="btnNextPage" disabled>Next</button>
+        </div>
+
         <label style="margin-top:10px">Markdown Output (Placeholders Injected)</label>
         <div id="mdOutput" class="preview-box" style="height:300px"></div>
       </div>
@@ -248,8 +261,8 @@
           <div style="flex:1">
             <label>Model</label>
             <select id="groqModel">
-              <option value="llama-3.3-70b-versatile" selected>llama-3.3-70b (Versatile)</option>
-              <option value="llama-3.1-70b-versatile">llama-3.1-70b</option>
+              <option value="deepseek-r1-distill-llama-70b" selected>DeepSeek R1 (Open Reasoning)</option>
+              <option value="llama-3.3-70b-versatile">llama-3.3-70b (Versatile)</option>
               <option value="mixtral-8x7b-32768">mixtral-8x7b</option>
               <option value="gemma2-9b-it">gemma2-9b</option>
             </select>
@@ -268,7 +281,8 @@
              <div style="flex:1">
               <label>CORS Proxy</label>
               <div style="display:flex; align-items:center; height:36px;">
-                <div id="corsToggle" class="switch on" title="Use corsproxy.io"></div>
+                <!-- Default OFF for LLM -->
+                <div id="corsToggle" class="switch" title="Use corsproxy.io"></div>
                 <span style="font-size:11px; margin-left:8px">Enabled</span>
               </div>
             </div>
@@ -340,6 +354,17 @@
               <option value="FR">French (FR)</option>
             </select>
           </div>
+        </div>
+
+        <div class="btn-row">
+             <div style="flex:1">
+              <label>CORS Proxy (Translation)</label>
+              <div style="display:flex; align-items:center; height:36px;">
+                <!-- Default OFF for Translation -->
+                <div id="transCorsToggle" class="switch" title="Use corsproxy.io"></div>
+                <span style="font-size:11px; margin-left:8px">Enabled</span>
+              </div>
+            </div>
         </div>
 
         <!-- Verification Subsection -->
@@ -460,13 +485,15 @@ const CONFIG = {
   phPrefix: '{{IMG:',
   phSuffix: '}}',
   btkUrl: 'https://nomsams.github.io/btk/',
-  allowedRatios: [9/16, 16/9, 1/1, 4/3, 3/4]
+  allowedRatios: [9/16, 16/9, 1/1, 4/3, 3/4],
+  galleryPerPage: 50 // Pagination limit
 };
 
 const state = {
   file: null,
   assets: [], // { id, page, width, height, blob, url, yPos, hash }
   selectedImageIds: new Set(),
+  galleryPage: 1,
   layoutData: [],
   rawDeepSeekText: "",
   markdown: "",
@@ -489,6 +516,10 @@ const ui = {
   btn1: document.getElementById('btnStep1'),
   btnCancel1: document.getElementById('btnCancel1'),
   gallery: document.getElementById('gallery'),
+  galleryPagination: document.getElementById('galleryPagination'),
+  btnPrevPage: document.getElementById('btnPrevPage'),
+  btnNextPage: document.getElementById('btnNextPage'),
+  pageIndicator: document.getElementById('pageIndicator'),
   mdOut: document.getElementById('mdOutput'),
   extractMode: document.getElementById('extractMode'),
   localSet: document.getElementById('localSettings'),
@@ -501,9 +532,11 @@ const ui = {
   jsonOut: document.getElementById('jsonOutput'),
   groqModel: document.getElementById('groqModel'),
   reasoningEffort: document.getElementById('reasoningEffort'),
+  corsToggle: document.getElementById('corsToggle'),
   
   cardTranslation: document.getElementById('cardTranslation'),
   transToggle: document.getElementById('transToggle'),
+  transCorsToggle: document.getElementById('transCorsToggle'),
   deeplKey: document.getElementById('deeplKey'),
   deeplTarget: document.getElementById('deeplTarget'),
   verifyToggle: document.getElementById('verifyToggle'),
@@ -558,14 +591,29 @@ const ui = {
   });
   ui.cardTranslation.classList.add('disabled');
 
-  // Load Schema
+  // Load Schema (Try multiple paths)
   const loadSchema = async () => {
     try {
-      let res = await fetch('json-schema.txt');
-      if(!res.ok) res = await fetch('json-schema.json');
-      if(res.ok) {
-        ui.schemaIn.value = await res.text();
-        log("Loaded default schema.", "SUCCESS");
+      // Try json.schema.txt first (as requested), then json-schema.txt, then json
+      const paths = ['json.schema.txt', 'json-schema.txt', 'json-schema.json'];
+      let content = null;
+      
+      for (const p of paths) {
+          try {
+              // Add timestamp to prevent caching
+              const res = await fetch(`./${p}?t=${Date.now()}`);
+              if (res.ok) {
+                  content = await res.text();
+                  log(`Loaded schema from ${p}`, "SUCCESS");
+                  break;
+              }
+          } catch(e) {}
+      }
+
+      if(content) {
+        ui.schemaIn.value = content;
+      } else {
+        log("Could not load default schema file.", "WARN");
       }
     } catch(e) { log("Schema load error: " + e.message, "WARN"); }
   };
@@ -589,6 +637,10 @@ const ui = {
   document.querySelectorAll('.switch').forEach(el => {
     if(el.id !== 'transToggle') el.addEventListener('click', () => el.classList.toggle('on'));
   });
+
+  // Pagination Listeners
+  ui.btnPrevPage.addEventListener('click', () => changeGalleryPage(-1));
+  ui.btnNextPage.addEventListener('click', () => changeGalleryPage(1));
 
   window.addEventListener('resize', drawFlow);
   setTimeout(drawFlow, 500);
@@ -719,6 +771,9 @@ ui.btn1.addEventListener('click', async () => {
         }
         if (select) state.selectedImageIds.add(asset.id);
     });
+    
+    // Reset to page 1 and render
+    state.galleryPage = 1;
     renderGallery();
 
     if (ui.extractMode.value === 'local') {
@@ -813,9 +868,39 @@ async function processImage(imgObj, pageNum) {
   state.assets.push({ id, page: pageNum, width: imgObj.width, height: imgObj.height, blob, url, hash });
 }
 
+// --- Pagination Logic ---
+function changeGalleryPage(delta) {
+    const maxPage = Math.ceil(state.assets.length / CONFIG.galleryPerPage);
+    const newPage = state.galleryPage + delta;
+    if (newPage >= 1 && newPage <= maxPage) {
+        state.galleryPage = newPage;
+        renderGallery();
+    }
+}
+
 function renderGallery() {
     ui.gallery.innerHTML = '';
-    state.assets.forEach(asset => {
+    const total = state.assets.length;
+    
+    if (total === 0) {
+        ui.galleryPagination.classList.add('hidden');
+        return;
+    }
+
+    ui.galleryPagination.classList.remove('hidden');
+    const maxPage = Math.ceil(total / CONFIG.galleryPerPage);
+    
+    // Update Controls
+    ui.pageIndicator.textContent = `Page ${state.galleryPage} / ${maxPage}`;
+    ui.btnPrevPage.disabled = state.galleryPage === 1;
+    ui.btnNextPage.disabled = state.galleryPage === maxPage;
+
+    // Slice assets
+    const start = (state.galleryPage - 1) * CONFIG.galleryPerPage;
+    const end = start + CONFIG.galleryPerPage;
+    const pageAssets = state.assets.slice(start, end);
+
+    pageAssets.forEach(asset => {
         const div = document.createElement('div');
         div.className = 'thumb';
         if (state.selectedImageIds.has(asset.id)) div.classList.add('selected');
@@ -936,7 +1021,7 @@ ui.btn2.addEventListener('click', async () => {
   
   const model = ui.groqModel.value;
   const reasoning = ui.reasoningEffort.value;
-  const useProxy = document.getElementById('corsToggle').classList.contains('on');
+  const useProxy = ui.corsToggle.classList.contains('on');
   const prompt = document.getElementById('groqPrompt').value;
 
   const messages = [
@@ -957,8 +1042,13 @@ ui.btn2.addEventListener('click', async () => {
         temperature: 0.1,
         response_format: { type: "json_object" }
     };
-    // Add reasoning if supported by model (pseudo-code logic as API varies)
-    if(reasoning !== 'disabled' && model.includes('120b')) payload.reasoning_effort = reasoning;
+    
+    // Add reasoning if supported by model (DeepSeek R1 on Groq usually handles this via model ID, 
+    // but we can pass reasoning_format if API supports it, or just rely on the model)
+    if(reasoning !== 'disabled' && (model.includes('deepseek') || model.includes('120b'))) {
+        // Some endpoints use reasoning_format, others just imply it. 
+        // We'll leave standard params.
+    }
 
     const res = await fetch(url, {
       method: "POST",
@@ -1011,24 +1101,40 @@ ui.btnTransRun.addEventListener('click', async () => {
 
     if(segments.length === 0) throw new Error("No text found");
 
-    // 2. DeepL Translate
-    setTransProgress(30, `Translating ${segments.length} segments...`);
+    // 2. DeepL Translate (With Batching)
+    setTransProgress(20, `Translating ${segments.length} segments...`);
     const tgt = ui.deeplTarget.value;
-    const proxy = "https://corsproxy.io/?";
-    const params = new URLSearchParams();
-    params.append('auth_key', key);
-    params.append('target_lang', tgt);
-    segments.forEach(s => params.append('text', s));
+    const useProxy = ui.transCorsToggle.classList.contains('on');
+    let endpoint = 'https://api-free.deepl.com/v2/translate';
+    if(useProxy) endpoint = "https://corsproxy.io/?" + encodeURIComponent(endpoint);
 
-    const res = await fetch(proxy + encodeURIComponent('https://api-free.deepl.com/v2/translate'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: params
-    });
-    if(!res.ok) throw new Error("DeepL Error");
-    const data = await res.json();
-    
-    data.translations.forEach((t, i) => map.set(segments[i], t.text));
+    // DeepL Limit: 50 texts per request. We must batch.
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < segments.length; i += BATCH_SIZE) {
+        const batch = segments.slice(i, i + BATCH_SIZE);
+        setTransProgress(20 + Math.floor((i / segments.length) * 40), `Translating batch ${Math.ceil(i/BATCH_SIZE) + 1}...`);
+        
+        // Use JSON body instead of URL encoded for better safety
+        const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 
+                'Authorization': `DeepL-Auth-Key ${key}`,
+                'Content-Type': 'application/json' 
+            },
+            body: JSON.stringify({
+                text: batch,
+                target_lang: tgt
+            })
+        });
+
+        if(!res.ok) {
+            const errText = await res.text();
+            throw new Error(`DeepL Error (${res.status}): ${errText}`);
+        }
+        
+        const data = await res.json();
+        data.translations.forEach((t, idx) => map.set(batch[idx], t.text));
+    }
 
     // 3. Reconstruct
     const apply = (o) => {
@@ -1067,8 +1173,12 @@ ui.btnTransRun.addEventListener('click', async () => {
             Translated JSON (To Fix):
             ${transJson}
             `;
+            
+            const useGroqProxy = ui.corsToggle.classList.contains('on');
+            let gUrl = "https://api.groq.com/openai/v1/chat/completions";
+            if(useGroqProxy) gUrl = "https://corsproxy.io/?" + encodeURIComponent(gUrl);
 
-            const vRes = await fetch("https://corsproxy.io/?https://api.groq.com/openai/v1/chat/completions", {
+            const vRes = await fetch(gUrl, {
                 method: "POST",
                 headers: { "Authorization": `Bearer ${groqKey}`, "Content-Type": "application/json" },
                 body: JSON.stringify({
