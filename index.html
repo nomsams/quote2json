@@ -318,7 +318,7 @@
     <!-- Preview Step 2 -->
     <div class="card" style="flex:1">
       <div class="card-head">
-        <span class="card-title">Structured JSON</span>
+        <span class="card-title">Structured JSON (Editable)</span>
         <div style="display:flex; gap:5px">
             <button style="width:auto; padding:2px 8px; font-size:10px" onclick="document.getElementById('debugRequest').classList.toggle('hidden')">Debug Req</button>
             <button style="width:auto; padding:2px 8px; font-size:10px" onclick="document.getElementById('groqRawOutput').classList.toggle('hidden')">Show Raw</button>
@@ -328,7 +328,8 @@
       <div class="card-body" style="flex:1; overflow:hidden;">
         <div id="debugRequest" class="preview-box hidden" style="height:150px; border-bottom:1px solid var(--line); margin-bottom:10px; color:var(--accent);"></div>
         <div id="groqRawOutput" class="preview-box hidden" style="height:150px; border-bottom:1px solid var(--line); margin-bottom:10px; color:var(--warn);"></div>
-        <div id="jsonOutput" class="preview-box" style="height:100%"></div>
+        <!-- Changed to Textarea for Editability -->
+        <textarea id="jsonOutput" class="preview-box" style="height:100%; resize:none; font-family:monospace;"></textarea>
       </div>
     </div>
   </div>
@@ -366,8 +367,8 @@
              <div style="flex:1">
               <label>CORS Proxy (Translation)</label>
               <div style="display:flex; align-items:center; height:36px;">
-                <!-- Default OFF for Translation -->
-                <div id="transCorsToggle" class="switch" title="Use corsproxy.io"></div>
+                <!-- Default ON for Translation because DeepL blocks browser calls -->
+                <div id="transCorsToggle" class="switch on" title="Use corsproxy.io"></div>
                 <span style="font-size:11px; margin-left:8px">Enabled</span>
               </div>
             </div>
@@ -660,6 +661,11 @@ const ui = {
   // Markdown Edit Listener
   ui.mdOut.addEventListener('input', (e) => {
     state.markdown = e.target.value;
+  });
+
+  // Structured JSON Edit Listener (Syncs state)
+  ui.jsonOut.addEventListener('input', (e) => {
+    state.groqJson = e.target.value;
   });
 
   window.addEventListener('resize', drawFlow);
@@ -1059,6 +1065,7 @@ ui.btn2.addEventListener('click', async () => {
 
   try {
     setProgress(2, 40, "Waiting for LLM...");
+    log("Preparing Groq Request...", "INFO");
     
     let url = "https://api.groq.com/openai/v1/chat/completions";
     if(useProxy) url = "https://corsproxy.io/?" + encodeURIComponent(url);
@@ -1085,6 +1092,7 @@ ui.btn2.addEventListener('click', async () => {
 
     // DEBUG: Show Request
     ui.debugRequest.textContent = JSON.stringify(payload, null, 2);
+    log(`Sending request to Groq (Model: ${model})...`, "INFO");
 
     const res = await fetch(url, {
       method: "POST",
@@ -1111,9 +1119,9 @@ ui.btn2.addEventListener('click', async () => {
     
     // Pretty-print JSON for display
     try {
-        ui.jsonOut.textContent = JSON.stringify(JSON.parse(content), null, 2);
+        ui.jsonOut.value = JSON.stringify(JSON.parse(content), null, 2);
     } catch(e) {
-        ui.jsonOut.textContent = content; // Fallback if parsing fails
+        ui.jsonOut.value = content; // Fallback if parsing fails
     }
     
     setProgress(2, 100, "Structuring Complete");
@@ -1138,13 +1146,26 @@ ui.btn2.addEventListener('click', async () => {
 ui.btnTransRun.addEventListener('click', async () => {
   const key = ui.deeplKey.value;
   if(!key) return alert("DeepL Key required");
-  if(!state.groqJson) return alert("No JSON to translate");
+  
+  // Ensure we have JSON to translate (either from Step 2 or manually pasted)
+  if(!state.groqJson && ui.jsonOut.value) {
+      state.groqJson = ui.jsonOut.value;
+  }
+  
+  if(!state.groqJson) return alert("No JSON to translate. Please run Step 2 or paste JSON.");
 
   ui.btnTransRun.disabled = true;
   setTransProgress(10, "Parsing JSON...");
+  log("Starting Translation Process...", "INFO");
 
   try {
-    const obj = JSON.parse(state.groqJson);
+    let obj;
+    try {
+        obj = JSON.parse(state.groqJson);
+    } catch(e) {
+        throw new Error("Invalid JSON in Step 2 output. Please validate.");
+    }
+
     const segments = [];
     const map = new Map();
 
@@ -1158,41 +1179,61 @@ ui.btnTransRun.addEventListener('click', async () => {
     };
     walk(obj);
 
-    if(segments.length === 0) throw new Error("No text found");
+    if(segments.length === 0) throw new Error("No text found to translate");
+    log(`Found ${segments.length} unique segments to translate.`, "INFO");
 
     // 2. DeepL Translate (With Batching)
     setTransProgress(20, `Translating ${segments.length} segments...`);
     const tgt = ui.deeplTarget.value;
     const useProxy = ui.transCorsToggle.classList.contains('on');
-    let endpoint = 'https://api-free.deepl.com/v2/translate';
-    if(useProxy) endpoint = "https://corsproxy.io/?" + encodeURIComponent(endpoint);
+    
+    // DeepL API requires proxy from browser due to CORS
+    if(!useProxy) {
+        log("WARNING: DeepL API calls from browser usually require a proxy (CORS).", "WARN");
+    }
 
-    // DeepL Limit: 50 texts per request. We must batch.
-    const BATCH_SIZE = 50;
+    let endpoint = 'https://api-free.deepl.com/v2/translate';
+    if(useProxy) {
+        endpoint = "https://corsproxy.io/?" + encodeURIComponent(endpoint);
+        log("Using CORS Proxy: corsproxy.io", "INFO");
+    }
+
+    // DeepL Limit: 50 texts per request. We use 25 to be safe with payload size.
+    const BATCH_SIZE = 25;
     for (let i = 0; i < segments.length; i += BATCH_SIZE) {
         const batch = segments.slice(i, i + BATCH_SIZE);
-        setTransProgress(20 + Math.floor((i / segments.length) * 40), `Translating batch ${Math.ceil(i/BATCH_SIZE) + 1}...`);
+        const currentBatchNum = Math.ceil(i/BATCH_SIZE) + 1;
+        const totalBatches = Math.ceil(segments.length/BATCH_SIZE);
         
-        // Use JSON body instead of URL encoded for better safety
-        const res = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 
-                'Authorization': `DeepL-Auth-Key ${key.trim()}`,
-                'Content-Type': 'application/json' 
-            },
-            body: JSON.stringify({
-                text: batch,
-                target_lang: tgt
-            })
-        });
+        setTransProgress(20 + Math.floor((i / segments.length) * 40), `Translating batch ${currentBatchNum}/${totalBatches}...`);
+        log(`Sending Batch ${currentBatchNum}/${totalBatches} (${batch.length} items)...`, "INFO");
+        
+        try {
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 
+                    'Authorization': `DeepL-Auth-Key ${key.trim()}`,
+                    'Content-Type': 'application/json' 
+                },
+                body: JSON.stringify({
+                    text: batch,
+                    target_lang: tgt
+                })
+            });
 
-        if(!res.ok) {
-            const errText = await res.text();
-            throw new Error(`DeepL Error (${res.status}): ${errText}`);
+            if(!res.ok) {
+                const errText = await res.text();
+                throw new Error(`DeepL Error (${res.status}): ${errText}`);
+            }
+            
+            const data = await res.json();
+            data.translations.forEach((t, idx) => map.set(batch[idx], t.text));
+            log(`Batch ${currentBatchNum} Success.`, "SUCCESS");
+            
+        } catch(fetchErr) {
+            log(`Batch ${currentBatchNum} Failed: ${fetchErr.message}`, "ERR");
+            throw fetchErr; // Stop on error
         }
-        
-        const data = await res.json();
-        data.translations.forEach((t, idx) => map.set(batch[idx], t.text));
     }
 
     // 3. Reconstruct
@@ -1212,6 +1253,8 @@ ui.btnTransRun.addEventListener('click', async () => {
     // 4. Optional LLM Verification
     if(ui.verifyToggle.classList.contains('on')) {
         setTransProgress(70, "Running LLM Verification...");
+        log("Starting LLM Verification...", "INFO");
+        
         const errors = ui.commonErrorsIn.value;
         const prefs = ui.prefWordsIn.value;
         const groqKey = ui.groqKey.value;
@@ -1258,13 +1301,20 @@ ui.btnTransRun.addEventListener('click', async () => {
                 vPayload.max_completion_tokens = 8192;
             }
 
+            log(`Sending Verification Request to Groq (${verifyModel})...`, "INFO");
             const vRes = await fetch(gUrl, {
                 method: "POST",
                 headers: { "Authorization": `Bearer ${groqKey}`, "Content-Type": "application/json" },
                 body: JSON.stringify(vPayload)
             });
+            
+            if(!vRes.ok) throw new Error(`Verification API Error: ${vRes.status}`);
+            
             const vData = await vRes.json();
             transJson = vData.choices[0].message.content;
+            log("Verification Complete.", "SUCCESS");
+        } else {
+            log("Skipping Verification: No Groq Key provided.", "WARN");
         }
     }
 
@@ -1277,6 +1327,7 @@ ui.btnTransRun.addEventListener('click', async () => {
   } catch(e) {
     log(e.message, "ERR");
     setTransProgress(0, "Failed");
+    alert("Translation Failed. Check logs below.");
   } finally {
     ui.btnTransRun.disabled = false;
   }
