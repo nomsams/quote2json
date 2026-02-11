@@ -5,8 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>PDF Flow • Ultimate Extraction & Translation</title>
 
-  <!-- ====== External Libraries ====== -->
-  <!-- PDF.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
   <script>
     (function ensurePdfjsReady(){
@@ -15,12 +13,9 @@
       lib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
     })();
   </script>
-  <!-- Tesseract.js -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.5/dist/tesseract.min.js"></script>
-  <!-- Pako for Compression -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
 
-  <!-- ====== Styles ====== -->
   <style>
     :root {
       --bg: #0f1115; --panel: #151923; --muted: #232836; --muted-2: #2b3244; 
@@ -28,7 +23,8 @@
       --ok: #30d158; --warn: #ffcc00; --err: #ff453a; 
       --line: #1e2431; --shadow: 0 10px 30px rgba(0,0,0,.35);
       --node: #1a2030; --pipe: #2d3346; --pipe-active: #62d0ff; --pipe-done: #30d158;
-      --highlight: #ff9f1c;
+      --highlight: #ff9f1c; --code-bg: #0c0e12;
+      --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
     }
     [data-theme="light"] {
       --bg: #f0f2f5; --panel: #ffffff; --muted: #dce3eb; --muted-2: #eef2f6;
@@ -36,7 +32,7 @@
       --ok: #059669; --warn: #d97706; --err: #dc2626;
       --line: #e2e8f0; --shadow: 0 4px 12px rgba(0,0,0,.05);
       --node: #ffffff; --pipe: #cbd5e1; --pipe-active: #2563eb; --pipe-done: #059669;
-      --highlight: #d97706;
+      --highlight: #d97706; --code-bg: #f8fafc;
     }
 
     * { box-sizing: border-box; }
@@ -76,43 +72,70 @@
     .card { background: var(--panel); border: 1px solid var(--muted); border-radius: 12px; padding: 0; box-shadow: var(--shadow); display: flex; flex-direction: column; position: relative; transition: border-color 0.3s; overflow: hidden; }
     .card:hover { border-color: var(--muted-2); }
     
-    .card-head { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); padding: 12px 16px; background: var(--muted-2); z-index: 5; }
+    .card-head { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); padding: 12px 16px; background: var(--muted-2); z-index: 5; flex-shrink: 0; }
     .card-title { font-weight: 600; font-size: 14px; color: var(--accent); }
     
     .card-body { padding: 16px; display: flex; flex-direction: column; gap: 10px; transition: opacity 0.3s; }
     
-    /* Disabled State Logic */
     .card.disabled .card-body { opacity: 0.3; pointer-events: none; filter: grayscale(0.8); }
     .card.disabled .card-head { opacity: 1; pointer-events: auto; } 
     
-    label { font-size: 12px; font-weight: 600; color: var(--text-dim); display: block; margin-bottom: 4px; }
-    input, select, textarea { width: 100%; background: var(--bg); border: 1px solid var(--muted); color: var(--text); padding: 8px; border-radius: 6px; font-family: inherit; font-size: 13px; outline: none; transition: 0.2s; }
+    label { font-size: 11px; font-weight: 700; color: var(--text-dim); display: block; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    input, select, textarea { width: 100%; background: var(--code-bg); border: 1px solid var(--muted); color: var(--text); padding: 8px; border-radius: 6px; font-family: inherit; font-size: 13px; outline: none; transition: 0.2s; }
     input:focus, select:focus, textarea:focus { border-color: var(--accent); }
-    textarea { resize: vertical; min-height: 80px; font-family: monospace; line-height: 1.4; }
+    textarea { resize: vertical; min-height: 60px; font-family: monospace; line-height: 1.4; }
     
     .btn-row { display: flex; gap: 8px; margin-top: 4px; }
-    button { flex: 1; background: var(--muted-2); border: 1px solid var(--muted); color: var(--text); padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: 0.2s; }
+    button { flex: 1; background: var(--muted-2); border: 1px solid var(--muted); color: var(--text); padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: 0.2s; display:flex; align-items:center; justify-content:center;}
     button:hover { border-color: var(--accent); color: var(--accent); }
     button:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(1); }
     button.primary { background: var(--accent); color: #090b10; border: none; }
-    button.primary:hover { filter: brightness(1.1); color: #000; }
+    button.primary:hover:not(:disabled) { filter: brightness(1.1); color: #000; }
     
-    /* SVG Pipes Layer */
     .pipes-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
     .flow-line { fill: none; stroke: var(--pipe); stroke-width: 3px; transition: stroke 0.5s, stroke-dashoffset 1s; }
     .flow-line.active { stroke: var(--pipe-active); filter: drop-shadow(0 0 4px var(--pipe-active)); }
     .flow-line.done { stroke: var(--pipe-done); filter: drop-shadow(0 0 4px var(--pipe-done)); }
 
-    .drop { border: 2px dashed var(--muted); border-radius: 8px; padding: 20px; text-align: center; cursor: pointer; transition: 0.2s; }
+    .drop { border: 2px dashed var(--muted); border-radius: 8px; padding: 20px; text-align: center; cursor: pointer; transition: 0.2s; background: var(--code-bg); }
     .drop:hover, .drop.drag { border-color: var(--accent); background: rgba(98, 208, 255, 0.05); }
     
     .progress-wrap { height: 4px; background: var(--muted); border-radius: 2px; overflow: hidden; margin-top: 5px; }
     .progress-bar { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s; }
     .status { font-size: 11px; color: var(--text-dim); margin-top: 4px; display: flex; justify-content: space-between; }
     
-    .preview-box { background: var(--bg); border: 1px solid var(--muted); border-radius: 6px; padding: 10px; overflow: auto; max-height: 300px; font-family: monospace; font-size: 11px; white-space: pre-wrap; }
+    .preview-box { background: var(--code-bg); border: 1px solid var(--muted); border-radius: 6px; padding: 10px; overflow: auto; max-height: 300px; font-family: var(--font-mono); font-size: 11px; white-space: pre-wrap; }
     
-    /* Gallery & Selection */
+    /* Interactive Editor Styles (From Overseer) */
+    .json-key { color: #79c0ff; }
+    .json-string { color: #a5d6ff; }
+    .json-number { color: #7ee787; }
+    .json-boolean { color: #ff7b72; }
+    
+    .editable-value { outline: none; border-radius: 2px; transition: background 0.2s; border-bottom: 1px solid transparent; }
+    .editable-value:focus { background: rgba(255,255,255,0.1); border-bottom: 1px solid var(--text-dim); }
+
+    .llm-changed {
+        background-color: rgba(245, 158, 11, 0.15); color: var(--warn);
+        border-bottom: 1px dashed var(--warn); cursor: pointer; position: relative;
+        padding: 1px 3px; border-radius: 3px; transition: 0.2s;
+    }
+    .llm-changed:hover { background-color: rgba(245, 158, 11, 0.4); }
+    .llm-changed:focus { background-color: rgba(245, 158, 11, 0.3); border-bottom: 1px solid var(--warn); }
+
+    #revertTooltip {
+        position: fixed; background: var(--panel); border: 1px solid var(--muted);
+        padding: 10px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.8);
+        display: none; z-index: 500; min-width: 250px; max-width: 400px; font-family: system-ui;
+    }
+    .revert-title { font-size: 10px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 8px; font-weight: bold;}
+    .revert-option { 
+        padding: 8px 10px; background: var(--code-bg); border-radius: 6px; 
+        margin-bottom: 0; cursor: pointer; font-size: 12px; border: 1px solid var(--muted); transition: 0.2s;
+    }
+    .revert-option:hover { border-color: var(--accent); background: rgba(98, 208, 255, 0.1); }
+
+    /* Gallery */
     .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 6px; max-height: 200px; overflow-y: auto; padding: 4px; }
     .thumb { aspect-ratio: 1; background: #000; border-radius: 4px; overflow: hidden; border: 2px solid var(--muted); position: relative; cursor: pointer; transition: 0.2s; opacity: 0.5; filter: grayscale(1); }
     .thumb.selected { border-color: var(--ok); opacity: 1; filter: grayscale(0); box-shadow: 0 0 8px rgba(48, 209, 88, 0.3); }
@@ -121,7 +144,6 @@
     .thumb-check { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; background: var(--ok); border-radius: 50%; display: none; align-items: center; justify-content: center; font-size: 10px; color: #000; font-weight: bold; }
     .thumb.selected .thumb-check { display: flex; }
 
-    /* Pagination Controls */
     .pagination-controls { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; padding: 4px; background: var(--muted-2); border-radius: 6px; }
     .pagination-controls button { width: auto; padding: 4px 12px; font-size: 11px; }
     .pagination-info { font-size: 11px; color: var(--text-dim); font-weight: 600; }
@@ -129,12 +151,11 @@
     #logs { position: fixed; bottom: 0; left: 0; right: 0; height: 200px; background: var(--panel); border-top: 1px solid var(--line); z-index: 200; display: flex; flex-direction: column; transition: transform 0.3s; box-shadow: 0 -5px 20px rgba(0,0,0,0.5); }
     #logs.minimized { transform: translateY(165px); }
     .log-head { padding: 8px 20px; background: var(--muted-2); font-size: 12px; font-weight: 700; display: flex; justify-content: space-between; cursor: pointer; }
-    .log-body { flex: 1; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 12px; color: var(--text-dim); }
+    .log-body { flex: 1; overflow-y: auto; padding: 10px; font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); }
     .log-entry { margin-bottom: 4px; border-bottom: 1px solid var(--line); padding-bottom: 2px; word-break: break-all; }
     .log-entry.ERR { color: var(--err); }
     .log-entry.SUCCESS { color: var(--ok); }
     .log-entry.WARN { color: var(--warn); }
-    .log-entry.VERBOSE { color: #555; font-size: 11px; }
 
     .switch { position: relative; width: 36px; height: 20px; background: var(--muted); border-radius: 20px; cursor: pointer; transition: 0.3s; }
     .switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; background: #fff; border-radius: 50%; transition: 0.3s; }
@@ -142,26 +163,22 @@
     .switch.on::after { transform: translateX(16px); }
 
     .hidden { display: none !important; }
-    .settings-group { padding: 8px; background: var(--bg); border-radius: 6px; border: 1px solid var(--line); margin-top: 8px; }
-    
-    .ph-tag { color: var(--highlight); font-weight: bold; border: 1px solid var(--highlight); border-radius: 4px; padding: 0 4px; background: rgba(255, 159, 28, 0.1); }
+    .settings-group { padding: 8px; background: var(--code-bg); border-radius: 6px; border: 1px solid var(--muted); margin-top: 8px; }
   </style>
 </head>
 <body>
 
 <header>
-  <h1><span>PDF Flow</span> <span class="badge">Ultimate</span></h1>
+  <h1><span>PDF Flow</span> <span class="badge">Ultimate Overseer</span></h1>
   <div style="display:flex; gap:15px; align-items:center;">
-    <div style="font-size:12px; color:var(--text-dim)">Dark Mode</div>
+    <div style="font-size:12px; color:var(--text-dim); font-weight:bold;">Dark Mode</div>
     <div id="themeToggle" class="switch on"></div>
   </div>
 </header>
 
 <main>
-  <!-- Visual Pipes SVG -->
   <svg class="pipes-layer" id="flowSvg"></svg>
 
-  <!-- COLUMN 1: PDF & OCR -->
   <div class="col">
     <div class="card" id="cardStep1">
       <div class="card-head">
@@ -188,7 +205,6 @@
           </select>
         </div>
 
-        <!-- Local Settings -->
         <div id="localSettings" class="settings-group">
           <div style="display:flex; justify-content:space-between; margin-bottom:5px">
             <label style="margin:0">Auto-OCR (Sparse Text)</label>
@@ -196,7 +212,6 @@
           </div>
         </div>
 
-        <!-- DeepSeek Settings -->
         <div id="deepseekSettings" class="settings-group hidden">
           <label>API Endpoint</label>
           <input id="ocrEndpoint" type="text" value="https://api.alphaxiv.org/models/v1/deepseek/deepseek-ocr/inference">
@@ -219,7 +234,6 @@
       </div>
     </div>
 
-    <!-- Preview Step 1 -->
     <div class="card" style="flex:1">
       <div class="card-head">
         <span class="card-title">Extracted Assets</span>
@@ -228,7 +242,6 @@
       <div class="card-body" style="flex:1; overflow:hidden;">
         <div id="gallery" class="gallery"></div>
         
-        <!-- Pagination Controls -->
         <div id="galleryPagination" class="pagination-controls hidden">
             <button id="btnPrevPage" disabled>Previous</button>
             <span id="pageIndicator" class="pagination-info">Page 1 / 1</span>
@@ -241,7 +254,6 @@
     </div>
   </div>
 
-  <!-- COLUMN 2: Groq & Schema -->
   <div class="col">
     <div class="card" id="cardStep2">
       <div class="card-head">
@@ -261,8 +273,8 @@
           <div style="flex:1">
             <label>Model</label>
             <select id="groqModel">
-              <option value="openai/gpt-oss-120b" selected>openai/gpt-oss-120b (High Reasoning)</option>
-              <option value="llama-3.3-70b-versatile">llama-3.3-70b (Versatile)</option>
+              <option value="openai/gpt-oss-120b" selected>openai/gpt-oss-120b</option>
+              <option value="llama-3.3-70b-versatile">llama-3.3-70b</option>
               <option value="mixtral-8x7b-32768">mixtral-8x7b</option>
               <option value="gemma2-9b-it">gemma2-9b</option>
             </select>
@@ -281,9 +293,8 @@
              <div style="flex:1">
               <label>CORS Proxy</label>
               <div style="display:flex; align-items:center; height:36px;">
-                <!-- Default OFF for LLM -->
                 <div id="corsToggle" class="switch" title="Use corsproxy.io"></div>
-                <span style="font-size:11px; margin-left:8px">Enabled</span>
+                <span style="font-size:11px; margin-left:8px; color:var(--text-dim); font-weight:bold;">Enabled</span>
               </div>
             </div>
         </div>
@@ -302,8 +313,7 @@
           <textarea id="groqPrompt" style="height:100px">Output a json using the text provided while modeling the json according to the json schema provided. Most text is in chronological order. 
 !IMPORTANT: Do not summarize. 
 !IMPORTANT: Keep image placeholder tags ({{IMG:...}}) exactly as they are.
-!IMPORTANT: Convert all measurements to SI units where appropriate.
-!IMPORTANT: Ensure high accuracy in data extraction.</textarea>
+!IMPORTANT: Convert all measurements to SI units where appropriate.</textarea>
         </div>
 
         <button id="btnStep2" class="primary" style="width:100%" disabled>Run Structuring</button>
@@ -315,37 +325,33 @@
       </div>
     </div>
 
-    <!-- Preview Step 2 -->
     <div class="card" style="flex:1">
       <div class="card-head">
         <span class="card-title">Structured JSON (Editable)</span>
         <div style="display:flex; gap:5px">
-            <button style="width:auto; padding:2px 8px; font-size:10px" onclick="document.getElementById('debugRequest').classList.toggle('hidden')">Debug Req</button>
             <button style="width:auto; padding:2px 8px; font-size:10px" onclick="document.getElementById('groqRawOutput').classList.toggle('hidden')">Show Raw</button>
             <button style="width:auto; padding:2px 8px; font-size:10px" onclick="copyToClip('jsonOutput')">Copy</button>
         </div>
       </div>
       <div class="card-body" style="flex:1; overflow:hidden;">
-        <div id="debugRequest" class="preview-box hidden" style="height:150px; border-bottom:1px solid var(--line); margin-bottom:10px; color:var(--accent);"></div>
         <div id="groqRawOutput" class="preview-box hidden" style="height:150px; border-bottom:1px solid var(--line); margin-bottom:10px; color:var(--warn);"></div>
-        <!-- Changed to Textarea for Editability -->
-        <textarea id="jsonOutput" class="preview-box" style="height:100%; resize:none; font-family:monospace;"></textarea>
+        <textarea id="jsonOutput" class="preview-box" style="height:100%; resize:none; font-family:var(--font-mono);"></textarea>
       </div>
     </div>
   </div>
 
-  <!-- COLUMN 3: Translation & Verification -->
   <div class="col">
     <div class="card disabled" id="cardTranslation">
       <div class="card-head">
-        <span class="card-title">3. Translation & Verify</span>
+        <span class="card-title">3. Overseer Translation</span>
         <div style="display:flex; align-items:center; gap:8px;">
-            <span style="font-size:11px; color:var(--text-dim)">Enable</span>
+            <span style="font-size:11px; color:var(--text-dim); font-weight:bold;">Enable</span>
             <div id="transToggle" class="switch"></div>
         </div>
       </div>
 
       <div class="card-body">
+        
         <div class="btn-row">
           <div style="flex:1">
             <label>DeepL API Key</label>
@@ -355,7 +361,7 @@
             <label>Target Lang</label>
             <select id="deeplTarget">
               <option value="SV" selected>Swedish (SV)</option>
-              <option value="EN">English (EN)</option>
+              <option value="EN-US">English (US)</option>
               <option value="DE">German (DE)</option>
               <option value="ES">Spanish (ES)</option>
               <option value="FR">French (FR)</option>
@@ -363,62 +369,80 @@
           </div>
         </div>
 
-        <div class="btn-row">
-             <div style="flex:1">
-              <label>CORS Proxy (Translation)</label>
-              <div style="display:flex; align-items:center; height:36px;">
-                <!-- Default ON for Translation because DeepL blocks browser calls -->
-                <div id="transCorsToggle" class="switch on" title="Use corsproxy.io"></div>
-                <span style="font-size:11px; margin-left:8px">Enabled</span>
+        <div class="settings-group">
+            <label>Target Keys (Leave blank for ALL strings)</label>
+            <input type="text" id="targetKeysInput" placeholder="e.g. text, name, description">
+        </div>
+
+        <div class="settings-group">
+            <div style="display:flex; justify-content:space-between; margin-bottom:5px">
+              <label style="margin:0">CORS Proxy</label>
+              <div id="transCorsToggle" class="switch on" title="Use Proxy"></div>
+            </div>
+            
+            <div id="proxySettings" style="display:flex; flex-direction:column; gap:8px;">
+              <select id="proxyProvider">
+                 <option value="lovable" selected>Lovable/Supabase (Config Mode)</option>
+                 <option value="thingproxy">ThingProxy (Public)</option>
+                 <option value="custom">Custom URL (Standard)</option>
+              </select>
+
+              <div id="authHeaderGroup" style="border-top:1px solid var(--muted); padding-top:8px;">
+                 <label style="color:var(--accent);">Proxy Auth Header (Lovable)</label>
+                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px;">
+                    <input type="text" id="proxyHeaderKey" placeholder="Key" value="x-proxy-key">
+                    <input type="text" id="proxyHeaderVal" placeholder="Value" value="chikibriki">
+                 </div>
+              </div>
+              <div id="customProxyGroup" class="hidden">
+                 <label>Custom Proxy URL</label>
+                 <input type="text" id="proxyUrl" placeholder="https://...">
               </div>
             </div>
         </div>
 
-        <!-- Verification Subsection -->
         <div class="settings-group">
             <div style="display:flex; justify-content:space-between; margin-bottom:5px">
-                <label style="margin:0; color:var(--accent)">LLM Verification (Step 4)</label>
+                <label style="margin:0; color:var(--warn)">LLM Verification (Flat-Map)</label>
                 <div id="verifyToggle" class="switch on"></div>
             </div>
             
-            <label>Verification Model</label>
-            <select id="verifyModel">
-                <option value="openai/gpt-oss-120b" selected>openai/gpt-oss-120b</option>
-                <option value="llama-3.3-70b-versatile">llama-3.3-70b</option>
-                <option value="mixtral-8x7b-32768">mixtral-8x7b</option>
-            </select>
+            <div id="verifySettings">
+                <label>Verification Model</label>
+                <select id="verifyModel">
+                    <option value="openai/gpt-oss-120b" selected>OpenAI gpt-oss-120b (High Reasoning)</option>
+                    <option value="llama-3.3-70b-versatile">Llama-3.3-70b</option>
+                    <option value="mixtral-8x7b-32768">Mixtral-8x7b</option>
+                </select>
 
-            <label style="margin-top:5px">Common Errors (Text or File)</label>
-            <div style="display:flex; gap:5px; margin-bottom:5px;">
-                <input type="file" id="commonErrorsFile" accept=".txt" style="width:100%">
-            </div>
-            <textarea id="commonErrorsInput" placeholder="List common translation errors here..." style="height:50px"></textarea>
+                <label style="margin-top:5px">Instructions</label>
+                <textarea id="verifyPrompt" style="height:60px">Act like a professional translator that has work at the UN and translated technical documents. Check the translation and choose better versions of words if necessary. Ensure professional tone and preserve HTML tags exactly.</textarea>
 
-            <label style="margin-top:5px">Preferred Words (word : count)</label>
-            <div style="display:flex; gap:5px; margin-bottom:5px;">
-                <input type="file" id="prefWordsFile" accept=".txt" style="width:100%">
+                <label style="margin-top:5px">Glossary / Dictionary (Load or Type)</label>
+                <input type="file" id="glossaryFile" accept=".txt" style="margin-bottom:5px;">
+                <textarea id="glossaryInput" placeholder="Wrong Word > Right Word&#10;English Word > Swedish Word" style="height:60px; font-family:var(--font-mono);"></textarea>
             </div>
-            <textarea id="prefWordsInput" placeholder="word : count (higher count = more preferred)" style="height:50px"></textarea>
         </div>
 
-        <button id="btnTransRun" class="primary" style="width:100%; margin-top:8px">Run DeepL + Verify</button>
+        <button id="btnTransRun" class="primary" style="width:100%; margin-top:8px">Run DeepL + Overseer</button>
 
         <div>
           <div class="status"><span id="statusTrans">Idle</span></div>
           <div class="progress-wrap"><div id="progBarTrans" class="progress-bar"></div></div>
         </div>
 
-        <div style="margin-top:8px">
-          <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-            <span class="card-title" style="font-size:12px;">Translated JSON</span>
-            <button style="width:auto; padding:2px 8px; font-size:10px" id="btnTransDownload">Download</button>
+        <div style="margin-top:8px; display:flex; flex-direction:column; height:300px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <span class="card-title" style="font-size:12px;">Interactive JSON Output</span>
+            <div class="badge" style="background:rgba(245, 158, 11, 0.2); color:var(--warn); border-color:var(--warn);" title="Click strings to edit. Orange = LLM Modified.">Editable</div>
           </div>
-          <div id="transOutputPreview" class="preview-box" style="height:150px"></div>
+          <div id="interactiveTransOutput" class="preview-box" style="flex:1; max-height:none; outline:none;">
+              Translation output will appear here. Values are clickable/editable.
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- STEP 4: Final Assembly -->
     <div class="card" id="cardStep4">
       <div class="card-head">
         <span class="card-title">4. Final Assembly</span>
@@ -435,9 +459,6 @@
             <label>Quality (0.1-1.0)</label>
             <input type="number" id="imgQuality" value="0.8" step="0.1" max="1">
           </div>
-        </div>
-
-        <div class="btn-row">
           <div style="flex:1">
             <label>Max Width (px)</label>
             <input type="number" id="imgMaxWidth" value="1280">
@@ -453,7 +474,6 @@
       </div>
     </div>
 
-    <!-- Preview Step 4 -->
     <div class="card" style="flex:1">
       <div class="card-head">
         <span class="card-title">Final JSON</span>
@@ -465,17 +485,15 @@
       <div class="card-body" style="flex:1; overflow:hidden;">
         <div id="finalJson" class="preview-box" style="flex:1"></div>
         
-        <!-- BTK Integration Buttons -->
         <div style="margin-top:10px; display:flex; gap:8px;">
-          <button id="btnOpenBtkLocal" style="background-color:#2d3346; border:1px solid var(--accent); color:var(--accent);">Open in BTK (Local)</button>
-          <button id="btnOpenBtkUrl" style="background-color:#2d3346; border:1px solid var(--accent); color:var(--accent);">Open in BTK (URL)</button>
+          <button id="btnOpenBtkLocal" style="background-color:var(--muted-2); border:1px solid var(--accent); color:var(--accent);">Open in BTK (Local)</button>
+          <button id="btnOpenBtkUrl" style="background-color:var(--muted-2); border:1px solid var(--accent); color:var(--accent);">Open in BTK (URL)</button>
         </div>
       </div>
     </div>
   </div>
 </main>
 
-<!-- Logs Drawer -->
 <div id="logs" class="minimized">
   <div class="log-head" onclick="document.getElementById('logs').classList.toggle('minimized')">
     <span>System Logs</span>
@@ -484,11 +502,11 @@
   <div id="logBody" class="log-body"></div>
 </div>
 
-<!-- Hidden Form for Fallback -->
-<iframe name="sink" id="sink" style="display:none"></iframe>
-<form id="hiddenForm" target="sink" method="POST" enctype="multipart/form-data" style="display:none">
-  <input type="file" name="file" id="hiddenInput"/>
-</form>
+<div id="revertTooltip">
+    <div class="revert-title">DeepL Original Translation</div>
+    <div id="revertOption" class="revert-option" title="Click to revert to this version"></div>
+    <div style="font-size:9px; color:var(--text-dim); text-align:right; margin-top:6px;">Click to revert</div>
+</div>
 
 <script>
 /**
@@ -500,23 +518,37 @@ const CONFIG = {
   phSuffix: '}}',
   btkUrl: 'https://nomsams.github.io/btk/',
   allowedRatios: [9/16, 16/9, 1/1, 4/3, 3/4],
-  galleryPerPage: 24 // Reduced to 24 for better visibility
+  galleryPerPage: 24,
+  batchSize: 25, 
+  llmBatchSize: 50,
+  proxies: {
+      lovable: "https://onbkfqayveownervyktu.supabase.co/functions/v1/cors-proxy",
+      thingproxy: "https://thingproxy.freeboard.io/fetch/"
+  }
 };
 
 const state = {
   file: null,
-  assets: [], // { id, page, width, height, blob, url, yPos, hash }
+  assets: [], 
   selectedImageIds: new Set(),
   galleryPage: 1,
   layoutData: [],
   rawDeepSeekText: "",
   markdown: "",
   groqJson: "",
-  finalJson: null,
   aborts: { step1: null },
   ocrWorker: null,
+  
+  // Translation State
   translationEnabled: false,
-  transOutputRaw: "",
+  transOutputRaw: "", // String representation for Step 4
+  step3DeepLObj: null,
+  step3FinalObj: null, // Actual object backing the interactive editor
+  
+  // Final Assembly
+  finalJson: null,
+  
+  // Flow triggers
   step1Done: false,
   step2Done: false,
   step3Done: false,
@@ -544,24 +576,34 @@ const ui = {
   schemaIn: document.getElementById('schemaInput'),
   btn2: document.getElementById('btnStep2'),
   jsonOut: document.getElementById('jsonOutput'),
-  debugRequest: document.getElementById('debugRequest'),
   groqRawOutput: document.getElementById('groqRawOutput'),
   groqModel: document.getElementById('groqModel'),
   reasoningEffort: document.getElementById('reasoningEffort'),
   corsToggle: document.getElementById('corsToggle'),
   
+  // Overseer / Translation Elements
   cardTranslation: document.getElementById('cardTranslation'),
   transToggle: document.getElementById('transToggle'),
   transCorsToggle: document.getElementById('transCorsToggle'),
+  proxyProvider: document.getElementById('proxyProvider'),
+  authHeaderGroup: document.getElementById('authHeaderGroup'),
+  customProxyGroup: document.getElementById('customProxyGroup'),
+  proxyUrl: document.getElementById('proxyUrl'),
+  proxyHeaderKey: document.getElementById('proxyHeaderKey'),
+  proxyHeaderVal: document.getElementById('proxyHeaderVal'),
+  proxySettings: document.getElementById('proxySettings'),
+  
   deeplKey: document.getElementById('deeplKey'),
   deeplTarget: document.getElementById('deeplTarget'),
+  targetKeysInput: document.getElementById('targetKeysInput'),
+  
   verifyToggle: document.getElementById('verifyToggle'),
+  verifySettings: document.getElementById('verifySettings'),
   verifyModel: document.getElementById('verifyModel'),
-  commonErrorsIn: document.getElementById('commonErrorsInput'),
-  prefWordsIn: document.getElementById('prefWordsInput'),
+  verifyPrompt: document.getElementById('verifyPrompt'),
+  glossaryInput: document.getElementById('glossaryInput'),
   btnTransRun: document.getElementById('btnTransRun'),
-  transOutputPreview: document.getElementById('transOutputPreview'),
-  btnTransDownload: document.getElementById('btnTransDownload'),
+  interactiveTransOutput: document.getElementById('interactiveTransOutput'),
   
   btn3: document.getElementById('btnStep3'),
   finalOut: document.getElementById('finalJson'),
@@ -570,7 +612,10 @@ const ui = {
   btnOpenBtkUrl: document.getElementById('btnOpenBtkUrl'),
   
   logs: document.getElementById('logBody'),
-  flowSvg: document.getElementById('flowSvg')
+  flowSvg: document.getElementById('flowSvg'),
+  
+  tooltip: document.getElementById('revertTooltip'),
+  revertBtn: document.getElementById('revertOption')
 };
 
 /**
@@ -584,10 +629,37 @@ const ui = {
     setTheme(!isDark);
   });
 
+  // Load API Keys
   ui.groqKey.value = localStorage.getItem('groqKey') || '';
   ui.groqKey.addEventListener('change', e => localStorage.setItem('groqKey', e.target.value));
   ui.deeplKey.value = localStorage.getItem('deeplKey') || '';
   ui.deeplKey.addEventListener('change', e => localStorage.setItem('deeplKey', e.target.value));
+
+  // Load Proxy Settings
+  ui.proxyProvider.value = localStorage.getItem('t_proxyProvider') || 'lovable';
+  ui.proxyUrl.value = localStorage.getItem('t_proxyUrl') || '';
+  ui.proxyHeaderKey.value = localStorage.getItem('t_proxyHeadKey') || 'x-proxy-key';
+  ui.proxyHeaderVal.value = localStorage.getItem('t_proxyHeadVal') || 'chikibriki';
+  ui.glossaryInput.value = localStorage.getItem('t_glossary') || '';
+  ui.targetKeysInput.value = localStorage.getItem('t_targetKeys') || '';
+  
+  const savedPrompt = localStorage.getItem('t_verifyPrompt');
+  if (savedPrompt) ui.verifyPrompt.value = savedPrompt;
+
+  updateProxyUI();
+
+  // Listeners
+  ui.proxyUrl.addEventListener('change', e => localStorage.setItem('t_proxyUrl', e.target.value));
+  ui.glossaryInput.addEventListener('change', e => localStorage.setItem('t_glossary', e.target.value));
+  ui.verifyPrompt.addEventListener('change', e => localStorage.setItem('t_verifyPrompt', e.target.value));
+  ui.proxyHeaderKey.addEventListener('change', e => localStorage.setItem('t_proxyHeadKey', e.target.value));
+  ui.proxyHeaderVal.addEventListener('change', e => localStorage.setItem('t_proxyHeadVal', e.target.value));
+  ui.targetKeysInput.addEventListener('change', e => localStorage.setItem('t_targetKeys', e.target.value));
+  
+  ui.proxyProvider.addEventListener('change', (e) => {
+      localStorage.setItem('t_proxyProvider', e.target.value);
+      updateProxyUI();
+  });
 
   ui.extractMode.addEventListener('change', (e) => {
     if(e.target.value === 'local') {
@@ -603,34 +675,37 @@ const ui = {
     state.translationEnabled = !state.translationEnabled;
     ui.transToggle.classList.toggle('on', state.translationEnabled);
     ui.cardTranslation.classList.toggle('disabled', !state.translationEnabled);
-    log(`Translation Module ${state.translationEnabled ? 'Enabled' : 'Disabled'}`, "INFO");
+    log(`Overseer Translation Module ${state.translationEnabled ? 'Enabled' : 'Disabled'}`, "INFO");
     drawFlow();
   });
-  ui.cardTranslation.classList.add('disabled');
 
-  // Load Schema (Try multiple paths)
+  ui.transCorsToggle.addEventListener('click', () => {
+      ui.transCorsToggle.classList.toggle('on');
+      ui.proxySettings.classList.toggle('hidden', !ui.transCorsToggle.classList.contains('on'));
+  });
+
+  ui.verifyToggle.addEventListener('click', () => {
+      ui.verifyToggle.classList.toggle('on');
+      ui.verifySettings.classList.toggle('hidden', !ui.verifyToggle.classList.contains('on'));
+  });
+
+  document.getElementById('glossaryFile').addEventListener('change', async (e) => {
+    const f = e.target.files[0];
+    if(f) ui.glossaryInput.value = await f.text();
+  });
+
+  // Load Schema
   const loadSchema = async () => {
     try {
       const paths = ['json.schema.txt', 'json-schema.txt', 'json-schema.json'];
       let content = null;
-      
       for (const p of paths) {
           try {
-              // Add timestamp to prevent caching
               const res = await fetch(`./${p}?t=${Date.now()}`);
-              if (res.ok) {
-                  content = await res.text();
-                  log(`Loaded schema from ${p}`, "SUCCESS");
-                  break;
-              }
+              if (res.ok) { content = await res.text(); log(`Loaded schema from ${p}`, "SUCCESS"); break; }
           } catch(e) {}
       }
-
-      if(content) {
-        ui.schemaIn.value = content;
-      } else {
-        log("Could not load default schema file.", "WARN");
-      }
+      if(content) ui.schemaIn.value = content;
     } catch(e) { log("Schema load error: " + e.message, "WARN"); }
   };
   await loadSchema();
@@ -640,43 +715,42 @@ const ui = {
     if(f) ui.schemaIn.value = await f.text();
   });
 
-  // Load Verification Files
-  document.getElementById('commonErrorsFile').addEventListener('change', async (e) => {
-    const f = e.target.files[0];
-    if(f) ui.commonErrorsIn.value = await f.text();
-  });
-  document.getElementById('prefWordsFile').addEventListener('change', async (e) => {
-    const f = e.target.files[0];
-    if(f) ui.prefWordsIn.value = await f.text();
-  });
-
   document.querySelectorAll('.switch').forEach(el => {
-    if(el.id !== 'transToggle') el.addEventListener('click', () => el.classList.toggle('on'));
+    if(el.id !== 'transToggle' && el.id !== 'transCorsToggle' && el.id !== 'verifyToggle') {
+        el.addEventListener('click', () => el.classList.toggle('on'));
+    }
   });
 
-  // Pagination Listeners
   ui.btnPrevPage.addEventListener('click', () => changeGalleryPage(-1));
   ui.btnNextPage.addEventListener('click', () => changeGalleryPage(1));
 
-  // Markdown Edit Listener
-  ui.mdOut.addEventListener('input', (e) => {
-    state.markdown = e.target.value;
-  });
+  ui.mdOut.addEventListener('input', e => state.markdown = e.target.value);
+  ui.jsonOut.addEventListener('input', e => state.groqJson = e.target.value);
 
-  // Structured JSON Edit Listener (Syncs state)
-  ui.jsonOut.addEventListener('input', (e) => {
-    state.groqJson = e.target.value;
+  // Close tooltip on outside click
+  document.addEventListener('click', (e) => {
+      if (!e.target.closest('.llm-changed') && !e.target.closest('#revertTooltip')) {
+          hideRevertTooltip();
+      }
   });
 
   window.addEventListener('resize', drawFlow);
   setTimeout(drawFlow, 500);
-  log("System Ready.");
+  log("System Ready. Overseer Integration Active.");
 })();
 
 function setTheme(isDark) {
   document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
   document.getElementById('themeToggle').classList.toggle('on', isDark);
   localStorage.setItem('theme', isDark ? 'dark' : 'light');
+}
+
+function updateProxyUI() {
+    const val = ui.proxyProvider.value;
+    if(val === 'lovable' || val === 'custom') ui.authHeaderGroup.classList.remove('hidden');
+    else ui.authHeaderGroup.classList.add('hidden');
+    if(val === 'custom') ui.customProxyGroup.classList.remove('hidden');
+    else ui.customProxyGroup.classList.add('hidden');
 }
 
 function log(msg, type="INFO") {
@@ -689,13 +763,10 @@ function log(msg, type="INFO") {
 
 function setProgress(step, pct, text) {
   const bar = document.getElementById(`progBar${step}`);
-  const txt = document.getElementById(`progText${step}`);
   const stat = document.getElementById(`status${step}`);
   if (bar) bar.style.width = `${pct}%`;
-  if (txt) txt.textContent = `${Math.round(pct)}%`;
   if (stat && text) stat.textContent = text;
 }
-
 function setTransProgress(pct, text) {
   const bar = document.getElementById('progBarTrans');
   const stat = document.getElementById('statusTrans');
@@ -714,7 +785,7 @@ function drawFlow() {
     
     const getPos = (rect, side) => ({
         x: side === 'left' ? rect.left - main.left : rect.right - main.left,
-        y: rect.top - main.top + (rect.height / 2)
+        y: rect.top - main.top + 28 // Center on header roughly
     });
 
     const createPath = (start, end, colorClass) => {
@@ -776,29 +847,21 @@ ui.btn1.addEventListener('click', async () => {
     setProgress(1, 5, "Scanning Images...");
     await extractImagesFromPDF(state.file, signal);
     
-    // Smart Selection Logic
     const smart = ui.smartSelect.classList.contains('on');
     const hashes = new Set();
     
-    state.assets.forEach((asset, index) => {
+    state.assets.forEach((asset) => {
         let select = true;
         if (smart) {
-            // 1. Aspect Ratio
             const ratio = asset.width / asset.height;
             const isRatioOk = CONFIG.allowedRatios.some(r => Math.abs(ratio - r) < 0.1);
             if (!isRatioOk) select = false;
-
-            // 2. Size
             if (asset.width < 100 || asset.height < 100) select = false;
-
-            // 3. Duplicates
-            if (hashes.has(asset.hash)) select = false;
-            else hashes.add(asset.hash);
+            if (hashes.has(asset.hash)) select = false; else hashes.add(asset.hash);
         }
         if (select) state.selectedImageIds.add(asset.id);
     });
     
-    // Reset to page 1 and render
     state.galleryPage = 1;
     renderGallery();
 
@@ -828,18 +891,11 @@ ui.btn1.addEventListener('click', async () => {
 ui.btnCancel1.addEventListener('click', () => { if(state.aborts.step1) state.aborts.step1.abort(); });
 
 function resetStep1() {
-  state.assets = [];
-  state.selectedImageIds.clear();
-  state.layoutData = [];
-  state.rawDeepSeekText = "";
-  state.markdown = "";
-  ui.gallery.innerHTML = "";
-  ui.mdOut.value = "";
-  state.step1Done = false;
-  drawFlow();
+  state.assets = []; state.selectedImageIds.clear(); state.layoutData = [];
+  state.rawDeepSeekText = ""; state.markdown = ""; ui.gallery.innerHTML = ""; ui.mdOut.value = "";
+  state.step1Done = false; drawFlow();
 }
 
-// --- Image Extraction & Smart Logic ---
 async function extractImagesFromPDF(file, signal) {
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument(buf).promise;
@@ -864,8 +920,7 @@ async function extractImagesFromPDF(file, signal) {
 async function processImage(imgObj, pageNum) {
   if(imgObj.width < 50 || imgObj.height < 50) return; 
   const canvas = document.createElement('canvas');
-  canvas.width = imgObj.width;
-  canvas.height = imgObj.height;
+  canvas.width = imgObj.width; canvas.height = imgObj.height;
   const ctx = canvas.getContext('2d');
 
   if(imgObj.bitmap) ctx.drawImage(imgObj.bitmap, 0, 0);
@@ -875,14 +930,11 @@ async function processImage(imgObj, pageNum) {
     let j=0, len=data.length;
     if(len === imgObj.width*imgObj.height*4) imgData.data.set(data);
     else if(len === imgObj.width*imgObj.height*3) {
-      for(let i=0; i<len; i+=3) {
-        imgData.data[j++] = data[i]; imgData.data[j++] = data[i+1]; imgData.data[j++] = data[i+2]; imgData.data[j++] = 255;
-      }
+      for(let i=0; i<len; i+=3) { imgData.data[j++] = data[i]; imgData.data[j++] = data[i+1]; imgData.data[j++] = data[i+2]; imgData.data[j++] = 255; }
     }
     ctx.putImageData(imgData, 0, 0);
   } else return;
 
-  // Simple Hash for Dedupe (Center Row)
   const midY = Math.floor(imgObj.height / 2);
   const rowData = ctx.getImageData(0, midY, imgObj.width, 1).data;
   let hash = "";
@@ -894,37 +946,25 @@ async function processImage(imgObj, pageNum) {
   state.assets.push({ id, page: pageNum, width: imgObj.width, height: imgObj.height, blob, url, hash });
 }
 
-// --- Pagination Logic ---
 function changeGalleryPage(delta) {
     const maxPage = Math.ceil(state.assets.length / CONFIG.galleryPerPage);
     const newPage = state.galleryPage + delta;
-    if (newPage >= 1 && newPage <= maxPage) {
-        state.galleryPage = newPage;
-        renderGallery();
-    }
+    if (newPage >= 1 && newPage <= maxPage) { state.galleryPage = newPage; renderGallery(); }
 }
 
 function renderGallery() {
     ui.gallery.innerHTML = '';
     const total = state.assets.length;
-    
-    if (total === 0) {
-        ui.galleryPagination.classList.add('hidden');
-        return;
-    }
-
+    if (total === 0) { ui.galleryPagination.classList.add('hidden'); return; }
     ui.galleryPagination.classList.remove('hidden');
     const maxPage = Math.ceil(total / CONFIG.galleryPerPage);
     
-    // Update Controls
     ui.pageIndicator.textContent = `Page ${state.galleryPage} / ${maxPage}`;
     ui.btnPrevPage.disabled = state.galleryPage === 1;
     ui.btnNextPage.disabled = state.galleryPage === maxPage;
 
-    // Slice assets
     const start = (state.galleryPage - 1) * CONFIG.galleryPerPage;
-    const end = start + CONFIG.galleryPerPage;
-    const pageAssets = state.assets.slice(start, end);
+    const pageAssets = state.assets.slice(start, start + CONFIG.galleryPerPage);
 
     pageAssets.forEach(asset => {
         const div = document.createElement('div');
@@ -932,13 +972,8 @@ function renderGallery() {
         if (state.selectedImageIds.has(asset.id)) div.classList.add('selected');
         div.innerHTML = `<img src="${asset.url}"><span>${asset.id}</span><div class="thumb-check">✓</div>`;
         div.onclick = () => {
-            if (state.selectedImageIds.has(asset.id)) {
-                state.selectedImageIds.delete(asset.id);
-                div.classList.remove('selected');
-            } else {
-                state.selectedImageIds.add(asset.id);
-                div.classList.add('selected');
-            }
+            if (state.selectedImageIds.has(asset.id)) { state.selectedImageIds.delete(asset.id); div.classList.remove('selected'); } 
+            else { state.selectedImageIds.add(asset.id); div.classList.add('selected'); }
             updateMarkdownOutput();
         };
         ui.gallery.appendChild(div);
@@ -953,29 +988,21 @@ function updateMarkdownOutput() {
     if (mode === 'local') {
         state.layoutData.forEach(node => {
             if (node.type === 'image') {
-                if (state.selectedImageIds.has(node.data.id)) {
-                    md += `\n\n${CONFIG.phPrefix}${node.data.id}|W:${node.data.width}|H:${node.data.height}${CONFIG.phSuffix}\n\n`;
-                }
-            } else {
-                md += node.content + "\n\n";
-            }
+                if (state.selectedImageIds.has(node.data.id)) md += `\n\n${CONFIG.phPrefix}${node.data.id}|W:${node.data.width}|H:${node.data.height}${CONFIG.phSuffix}\n\n`;
+            } else { md += node.content + "\n\n"; }
         });
-        // Append any selected images not found in layout (fallback)
         const usedIds = new Set(state.layoutData.filter(n => n.type === 'image').map(n => n.data.id));
         selectedAssets.forEach(a => {
             if(!usedIds.has(a.id)) md += `\n\n${CONFIG.phPrefix}${a.id}|W:${a.width}|H:${a.height}${CONFIG.phSuffix}\n\n`;
         });
     } else {
         md = state.rawDeepSeekText + "\n\n";
-        selectedAssets.forEach(a => {
-            md += `\n${CONFIG.phPrefix}${a.id}|W:${a.width}|H:${a.height}${CONFIG.phSuffix}`;
-        });
+        selectedAssets.forEach(a => { md += `\n${CONFIG.phPrefix}${a.id}|W:${a.width}|H:${a.height}${CONFIG.phSuffix}`; });
     }
     state.markdown = md.trim();
     ui.mdOut.value = state.markdown;
 }
 
-// --- Local Processing ---
 async function runLocalPDFProcessing(file, signal) {
   const buf = await file.arrayBuffer();
   const doc = await pdfjsLib.getDocument(buf).promise;
@@ -1000,32 +1027,24 @@ async function runLocalPDFProcessing(file, signal) {
     } else {
       layoutData.push({ type: 'text', content: textContent.items.map(i=>i.str).join(' ') });
     }
-    
-    // Interleave images for this page
     const pageImgs = state.assets.filter(a => a.page === i);
     pageImgs.forEach(img => layoutData.push({ type: 'image', data: img }));
   }
   return layoutData;
 }
 
-// --- DeepSeek OCR ---
 async function runDeepSeekOCR(file, signal) {
   const endpoint = document.getElementById('ocrEndpoint').value;
   const proxy = document.getElementById('ocrProxy').value;
   const url = proxy ? proxy : `https://corsproxy.io/?${encodeURIComponent(endpoint)}`;
-  
-  const fd = new FormData();
-  fd.append('file', file);
-  
+  const fd = new FormData(); fd.append('file', file);
   const xhr = new XMLHttpRequest();
   return new Promise((resolve, reject) => {
     xhr.open('POST', url);
     xhr.onload = () => {
       if(xhr.status === 200) {
-        try {
-            const json = JSON.parse(xhr.responseText);
-            resolve(json.text || json.content || JSON.stringify(json));
-        } catch(e) { resolve(xhr.responseText); }
+        try { const json = JSON.parse(xhr.responseText); resolve(json.text || json.content || JSON.stringify(json)); } 
+        catch(e) { resolve(xhr.responseText); }
       } else reject(new Error("API Error " + xhr.status));
     };
     xhr.onerror = () => reject(new Error("Network Error"));
@@ -1037,10 +1056,7 @@ async function runDeepSeekOCR(file, signal) {
 /**
  * STEP 2: GROQ STRUCTURING
  */
-function cleanJson(str) {
-  if (!str) return "";
-  return str.replace(/```json/g, '').replace(/```/g, '').trim();
-}
+function cleanJson(str) { if (!str) return ""; return str.replace(/```json/g, '').replace(/```/g, '').trim(); }
 
 ui.btn2.addEventListener('click', async () => {
   const key = ui.groqKey.value;
@@ -1070,36 +1086,17 @@ ui.btn2.addEventListener('click', async () => {
     let url = "https://api.groq.com/openai/v1/chat/completions";
     if(useProxy) url = "https://corsproxy.io/?" + encodeURIComponent(url);
 
-    // Construct Payload
-    const payload = {
-        model: model,
-        messages: messages,
-        temperature: 0.2, 
-        top_p: 1,
-        stream: false,
-        response_format: { type: "json_object" }
-    };
-
-    // Model Specific Adjustments
+    const payload = { model: model, messages: messages, temperature: 0.2, top_p: 1, stream: false, response_format: { type: "json_object" } };
     if (model === 'openai/gpt-oss-120b') {
         payload.max_completion_tokens = 65536;
-        if (reasoningEffort !== 'disabled') {
-            payload.reasoning_effort = reasoningEffort;
-        }
-    } else {
-        payload.max_completion_tokens = 8192;
-    }
+        if (reasoningEffort !== 'disabled') payload.reasoning_effort = reasoningEffort;
+    } else payload.max_completion_tokens = 8192;
 
-    // DEBUG: Show Request
-    ui.debugRequest.textContent = JSON.stringify(payload, null, 2);
     log(`Sending request to Groq (Model: ${model})...`, "INFO");
 
     const res = await fetch(url, {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${key}`,
-        "Content-Type": "application/json"
-      },
+      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
 
@@ -1108,28 +1105,17 @@ ui.btn2.addEventListener('click', async () => {
     const data = await res.json();
     let content = data.choices[0].message.content;
     
-    // Show Raw Output
     ui.groqRawOutput.textContent = content;
-
-    // Clean JSON before storing
     content = cleanJson(content);
-    
-    // Keep the raw JSON string as returned by the LLM
     state.groqJson = content;
     
-    // Pretty-print JSON for display
-    try {
-        ui.jsonOut.value = JSON.stringify(JSON.parse(content), null, 2);
-    } catch(e) {
-        ui.jsonOut.value = content; // Fallback if parsing fails
-    }
+    try { ui.jsonOut.value = JSON.stringify(JSON.parse(content), null, 2); } 
+    catch(e) { ui.jsonOut.value = content; }
     
     setProgress(2, 100, "Structuring Complete");
     log("Step 2 Complete", "SUCCESS");
-    
     state.step2Done = true;
     drawFlow();
-    
     ui.btn3.disabled = false;
 
   } catch(e) {
@@ -1141,212 +1127,347 @@ ui.btn2.addEventListener('click', async () => {
 });
 
 /**
- * STEP 3: TRANSLATION & VERIFICATION
+ * STEP 3: OVERSEER TRANSLATION & VERIFICATION
  */
 ui.btnTransRun.addEventListener('click', async () => {
-  const key = ui.deeplKey.value;
-  if(!key) return alert("DeepL Key required");
+  const apiKey = ui.deeplKey.value.trim();
+  if(!apiKey) return alert("DeepL API Key is required.");
   
-  // Ensure we have JSON to translate (either from Step 2 or manually pasted)
-  if(!state.groqJson && ui.jsonOut.value) {
-      state.groqJson = ui.jsonOut.value;
-  }
-  
-  if(!state.groqJson) return alert("No JSON to translate. Please run Step 2 or paste JSON.");
+  // Sync state if edited manually
+  if(!state.groqJson && ui.jsonOut.value) state.groqJson = ui.jsonOut.value;
+  if(!state.groqJson) return alert("No JSON to translate. Run Step 2 first.");
+
+  let sourceObj;
+  try { sourceObj = JSON.parse(state.groqJson); } 
+  catch(e) { log("Invalid JSON in Step 2 Output", "ERR"); return alert("Invalid JSON in Structure Data."); }
 
   ui.btnTransRun.disabled = true;
-  setTransProgress(10, "Parsing JSON...");
-  log("Starting Translation Process...", "INFO");
+  hideRevertTooltip();
+  setTransProgress(5, "Extracting text...");
+  log("Starting Translation Extraction...", "INFO");
 
   try {
-    let obj;
-    try {
-        obj = JSON.parse(state.groqJson);
-    } catch(e) {
-        throw new Error("Invalid JSON in Step 2 output. Please validate.");
-    }
-
-    const segments = [];
-    const map = new Map();
-
-    // 1. Extract Segments
-    const walk = (o) => {
-        if(typeof o === 'string' && o.length > 2 && !o.startsWith('{{IMG')) {
-            if(!map.has(o)) { map.set(o, null); segments.push(o); }
-        } else if(typeof o === 'object' && o !== null) {
-            Object.values(o).forEach(walk);
-        }
-    };
-    walk(obj);
-
-    if(segments.length === 0) throw new Error("No text found to translate");
-    log(`Found ${segments.length} unique segments to translate.`, "INFO");
-
-    // 2. DeepL Translate (With Batching)
-    setTransProgress(20, `Translating ${segments.length} segments...`);
-    const tgt = ui.deeplTarget.value;
-    const useProxy = ui.transCorsToggle.classList.contains('on');
+    // 1. Extract Strings
+    const rawKeys = ui.targetKeysInput.value;
+    const targetKeys = rawKeys ? rawKeys.split(',').map(s=>s.trim()).filter(s=>s) : [];
     
-    // DeepL API requires proxy from browser due to CORS
-    if(!useProxy) {
-        log("WARNING: DeepL API calls from browser usually require a proxy (CORS).", "WARN");
+    const { segments, map } = extractStringsForTranslation(sourceObj, targetKeys);
+    log(`Extracted ${segments.length} unique strings to translate.`, "INFO");
+
+    if(segments.length === 0) {
+      log("No translatable text found.", "WARN");
+      state.step3FinalObj = JSON.parse(JSON.stringify(sourceObj));
+      state.transOutputRaw = JSON.stringify(state.step3FinalObj, null, 2);
+      renderInteractiveOutput();
+      setTransProgress(100, "Done (No Text)");
+      state.step3Done = true; drawFlow();
+      return;
     }
 
-    let endpoint = 'https://api-free.deepl.com/v2/translate';
-    if(useProxy) {
-        endpoint = "https://corsproxy.io/?" + encodeURIComponent(endpoint);
-        log("Using CORS Proxy: corsproxy.io", "INFO");
-    }
+    // 2. DeepL Translation
+    await translateSegments(segments, map, apiKey);
 
-    // DeepL Limit: 50 texts per request. We use 25 to be safe with payload size.
-    const BATCH_SIZE = 25;
-    for (let i = 0; i < segments.length; i += BATCH_SIZE) {
-        const batch = segments.slice(i, i + BATCH_SIZE);
-        const currentBatchNum = Math.ceil(i/BATCH_SIZE) + 1;
-        const totalBatches = Math.ceil(segments.length/BATCH_SIZE);
-        
-        setTransProgress(20 + Math.floor((i / segments.length) * 40), `Translating batch ${currentBatchNum}/${totalBatches}...`);
-        log(`Sending Batch ${currentBatchNum}/${totalBatches} (${batch.length} items)...`, "INFO");
-        
-        try {
-            const res = await fetch(endpoint, {
-                method: 'POST',
-                headers: { 
-                    'Authorization': `DeepL-Auth-Key ${key.trim()}`,
-                    'Content-Type': 'application/json' 
-                },
-                body: JSON.stringify({
-                    text: batch,
-                    target_lang: tgt
-                })
-            });
-
-            if(!res.ok) {
-                const errText = await res.text();
-                throw new Error(`DeepL Error (${res.status}): ${errText}`);
-            }
-            
-            const data = await res.json();
-            data.translations.forEach((t, idx) => map.set(batch[idx], t.text));
-            log(`Batch ${currentBatchNum} Success.`, "SUCCESS");
-            
-        } catch(fetchErr) {
-            log(`Batch ${currentBatchNum} Failed: ${fetchErr.message}`, "ERR");
-            throw fetchErr; // Stop on error
-        }
-    }
-
-    // 3. Reconstruct
-    const apply = (o) => {
-        if(typeof o === 'string' && map.has(o)) return map.get(o);
-        if(Array.isArray(o)) return o.map(apply);
-        if(typeof o === 'object' && o !== null) {
-            const n = {};
-            for(let k in o) n[k] = apply(o[k]);
-            return n;
-        }
-        return o;
-    };
-    let transObj = apply(obj);
-    let transJson = JSON.stringify(transObj, null, 2);
-
-    // 4. Optional LLM Verification
+    // 3. Reconstruct DeepL Backup
+    log("Reconstructing DeepL Baseline...", "INFO");
+    state.step3DeepLObj = reconstructJson(sourceObj, map);
+    
+    // 4. Overseer LLM Verification (Flat Map)
+    let finalMap = map;
     if(ui.verifyToggle.classList.contains('on')) {
-        setTransProgress(70, "Running LLM Verification...");
-        log("Starting LLM Verification...", "INFO");
-        
-        const errors = ui.commonErrorsIn.value;
-        const prefs = ui.prefWordsIn.value;
-        const groqKey = ui.groqKey.value;
-        const verifyModel = document.getElementById('verifyModel').value;
-        const reasoningEffort = document.getElementById('reasoningEffort').value;
-        
-        if(groqKey) {
-            const verifyPrompt = `
-            You are a Translation QA Expert.
-            Task: Correct the Translated JSON based on the Source JSON.
-            
-            Rules:
-            1. Fix these Common Errors: ${errors}
-            2. Use these Preferred Words (word:count): ${prefs}
-            3. Output ONLY the corrected JSON.
-            
-            Source JSON:
-            ${state.groqJson.substring(0, 15000)}... (truncated if too long)
-            
-            Translated JSON (To Fix):
-            ${transJson}
-            `;
-            
-            const useGroqProxy = ui.corsToggle.classList.contains('on');
-            let gUrl = "https://api.groq.com/openai/v1/chat/completions";
-            if(useGroqProxy) gUrl = "https://corsproxy.io/?" + encodeURIComponent(gUrl);
-
-            // Construct Verification Payload (Same logic as Step 2)
-            const vPayload = {
-                model: verifyModel,
-                messages: [{role:"user", content: verifyPrompt}],
-                temperature: 0.1,
-                top_p: 1,
-                stream: false,
-                response_format: { type: "json_object" }
-            };
-
-            if (verifyModel === 'openai/gpt-oss-120b') {
-                vPayload.max_completion_tokens = 65536;
-                if (reasoningEffort !== 'disabled') {
-                    vPayload.reasoning_effort = reasoningEffort;
-                }
-            } else {
-                vPayload.max_completion_tokens = 8192;
-            }
-
-            log(`Sending Verification Request to Groq (${verifyModel})...`, "INFO");
-            const vRes = await fetch(gUrl, {
-                method: "POST",
-                headers: { "Authorization": `Bearer ${groqKey}`, "Content-Type": "application/json" },
-                body: JSON.stringify(vPayload)
-            });
-            
-            if(!vRes.ok) throw new Error(`Verification API Error: ${vRes.status}`);
-            
-            const vData = await vRes.json();
-            transJson = vData.choices[0].message.content;
-            log("Verification Complete.", "SUCCESS");
-        } else {
-            log("Skipping Verification: No Groq Key provided.", "WARN");
-        }
+      if(!ui.groqKey.value) throw new Error("Verification enabled but no Groq Key provided.");
+      finalMap = await verifyWithGroq(segments, map);
     }
 
-    state.transOutputRaw = transJson;
-    ui.transOutputPreview.textContent = transJson;
-    setTransProgress(100, "Done");
+    // 5. Final Reconstruction
+    state.step3FinalObj = reconstructJson(sourceObj, finalMap);
+    state.transOutputRaw = JSON.stringify(state.step3FinalObj, null, 2); // Save for Step 4
+
+    // 6. UI Render
+    renderInteractiveOutput();
+    log("Translation Process Complete.", "SUCCESS");
+    setTransProgress(100, "Translation Complete");
     state.step3Done = true;
     drawFlow();
 
-  } catch(e) {
+  } catch (e) {
     log(e.message, "ERR");
     setTransProgress(0, "Failed");
-    alert("Translation Failed. Check logs below.");
+    alert("Translation Process Failed. Check logs.");
   } finally {
     ui.btnTransRun.disabled = false;
   }
 });
 
-ui.btnTransDownload.addEventListener('click', () => {
-    const blob = new Blob([state.transOutputRaw], {type:'application/json'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'translated.json';
-    a.click();
+// Overseer Extract
+function extractStringsForTranslation(obj, targetKeys = []) {
+  const segments = []; const map = new Map(); 
+  const walk = (node, currentKey = null) => {
+    if (typeof node === 'string') {
+      const keyMatch = targetKeys.length === 0 || targetKeys.includes(currentKey);
+      if (keyMatch) {
+          const s = node.trim();
+          if (s.length > 1 && isNaN(s) && !s.startsWith(CONFIG.phPrefix)) {
+            if (!map.has(node)) { map.set(node, null); segments.push(node); }
+          }
+      }
+    } else if (Array.isArray(node)) {
+      node.forEach(item => walk(item, currentKey));
+    } else if (typeof node === 'object' && node !== null) {
+      for (const [key, value] of Object.entries(node)) walk(value, key);
+    }
+  };
+  walk(obj, null);
+  return { segments, map };
+}
+
+// Overseer DeepL
+async function translateSegments(segments, map, apiKey) {
+  const targetLang = ui.deeplTarget.value;
+  const useProxy = ui.transCorsToggle.classList.contains('on');
+  const proxyProvider = ui.proxyProvider.value;
+  
+  let deepLEndpoint = "https://api-free.deepl.com/v2/translate";
+  if (!apiKey.endsWith(":fx")) deepLEndpoint = "https://api.deepl.com/v2/translate";
+
+  const total = segments.length; let processed = 0;
+
+  for (let i = 0; i < total; i += CONFIG.batchSize) {
+    const batch = segments.slice(i, i + CONFIG.batchSize);
+    processed += batch.length;
+    setTransProgress(10 + Math.round((processed / total) * 40), `DeepL Translating ${processed}/${total}...`);
+
+    let fetchUrl = deepLEndpoint;
+    const deepLBody = { text: batch, target_lang: targetLang, tag_handling: "html" };
+    let fetchOptions = {
+        method: 'POST',
+        headers: { 'Authorization': `DeepL-Auth-Key ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(deepLBody)
+    };
+
+    if (useProxy) {
+        if (proxyProvider === 'lovable') {
+            fetchUrl = CONFIG.proxies.lovable;
+            fetchOptions = {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', [ui.proxyHeaderKey.value]: ui.proxyHeaderVal.value },
+                body: JSON.stringify({
+                    url: deepLEndpoint, method: 'POST',
+                    headers: { 'Authorization': `DeepL-Auth-Key ${apiKey}`, 'Content-Type': 'application/json' },
+                    body: deepLBody
+                })
+            };
+        } else {
+            let proxyBase = (proxyProvider === 'custom') ? ui.proxyUrl.value.trim() : CONFIG.proxies[proxyProvider];
+            fetchUrl = proxyBase + deepLEndpoint;
+            if (proxyProvider === 'custom' && ui.proxyHeaderKey.value) fetchOptions.headers[ui.proxyHeaderKey.value] = ui.proxyHeaderVal.value;
+        }
+    }
+
+    const response = await fetch(fetchUrl, fetchOptions);
+    if (!response.ok) { const txt = await response.text(); throw new Error(`DeepL API Error ${response.status}: ${txt}`); }
+    const data = await response.json();
+    
+    if(data.translations) data.translations.forEach((t, index) => map.set(batch[index], t.text));
+    else if(data.body && data.body.translations) data.body.translations.forEach((t, index) => map.set(batch[index], t.text));
+    else throw new Error("Unexpected DeepL response structure.");
+  }
+}
+
+// Overseer Flat-Map Validate
+async function verifyWithGroq(segments, deepLMap) {
+  log("Initiating LLM Overseer Flat-Map Verification...", "INFO");
+  
+  const key = ui.groqKey.value;
+  const model = ui.verifyModel.value;
+  const promptTxt = ui.verifyPrompt.value;
+  const glossary = ui.glossaryInput.value.trim();
+  const useProxy = ui.transCorsToggle.classList.contains('on');
+  const proxyProvider = ui.proxyProvider.value;
+  let llmEndpoint = "https://api.groq.com/openai/v1/chat/completions";
+  
+  const finalMap = new Map(deepLMap); 
+  const total = segments.length; let processed = 0;
+
+  for (let i = 0; i < total; i += CONFIG.llmBatchSize) {
+      const batchSegments = segments.slice(i, i + CONFIG.llmBatchSize);
+      processed += batchSegments.length;
+      setTransProgress(50 + Math.round((processed / total) * 45), `LLM Verifying Diffs ${processed}/${total}...`);
+      
+      const translationBatch = {};
+      batchSegments.forEach(seg => translationBatch[seg] = deepLMap.get(seg));
+
+      let sysContent = "You are a Translation QA Expert. You will receive a JSON object mapping original text to translated text. Return ONLY a JSON object with the exact same keys, where the values are the verified and improved translations. CRITICAL: If original text contains HTML tags (e.g. <strong>), preserve them exactly.";
+      let userContent = `Instructions: ${promptTxt}\n\n`;
+      if (glossary) userContent += `!!! CRITICAL GLOSSARY (Apply these fixes if found):\n${glossary}\n\n`;
+      userContent += `Translations to Verify & Improve (JSON Map):\n${JSON.stringify(translationBatch, null, 2)}`;
+
+      let payloadBody = {
+          model: model, messages: [ { role: "system", content: sysContent }, { role: "user", content: userContent } ],
+          response_format: { type: "json_object" }, temperature: 0.2, stream: false
+      };
+
+      if (model === "openai/gpt-oss-120b") {
+          payloadBody.reasoning_effort = "high"; payloadBody.max_completion_tokens = 65536; payloadBody.top_p = 1;
+      }
+
+      let fetchUrl = llmEndpoint;
+      let fetchOptions = { method: "POST", headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify(payloadBody) };
+
+      if (useProxy) {
+          if (proxyProvider === 'lovable') {
+                fetchUrl = CONFIG.proxies.lovable;
+                fetchOptions = {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', [ui.proxyHeaderKey.value]: ui.proxyHeaderVal.value },
+                    body: JSON.stringify({
+                        url: llmEndpoint, method: 'POST', timeout: 300000, 
+                        headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+                        body: payloadBody 
+                    })
+                };
+          } else fetchUrl = "https://thingproxy.freeboard.io/fetch/" + llmEndpoint;
+      }
+
+      log(`Sending LLM Batch ${(i/CONFIG.llmBatchSize)+1} to Model: ${model}...`, "NET");
+      try {
+          const res = await fetch(fetchUrl, fetchOptions);
+          if(!res.ok) { const err = await res.text(); log(`LLM Batch Failed. Keeping DeepL version.`, "WARN", err); continue; }
+          const data = await res.json();
+          let content = (proxyProvider === 'lovable' && useProxy && data.body) ? data.body.choices[0].message.content : data.choices[0].message.content;
+
+          const improvedBatch = JSON.parse(content);
+          for (const [orig, improvedTrans] of Object.entries(improvedBatch)) {
+              if (finalMap.has(orig) && typeof improvedTrans === 'string') finalMap.set(orig, improvedTrans);
+          }
+          log(`LLM Batch ${(i/CONFIG.llmBatchSize)+1} Complete.`, "SUCCESS");
+      } catch (e) { log(`LLM Batch Error. Keeping DeepL version.`, "WARN", e.message); }
+  }
+  return finalMap;
+}
+
+// Overseer Reconstruct
+function reconstructJson(obj, map) {
+  const apply = (node) => {
+    if (typeof node === 'string') return map.has(node) ? map.get(node) : node;
+    if (Array.isArray(node)) return node.map(apply);
+    if (typeof node === 'object' && node !== null) {
+      const newObj = {}; for (const k in node) newObj[k] = apply(node[k]); return newObj;
+    }
+    return node;
+  };
+  return apply(obj);
+}
+
+// --- Interactive Editor Logic ---
+function setValueAtPath(obj, pathArr, value) {
+    let current = obj;
+    for (let i = 0; i < pathArr.length - 1; i++) current = current[pathArr[i]];
+    current[pathArr[pathArr.length - 1]] = value;
+}
+
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
+window.handleManualEdit = function(event, element) {
+    const path = JSON.parse(element.getAttribute('data-path'));
+    const newValue = element.textContent; 
+    let currentVal = state.step3FinalObj;
+    for (const p of path) currentVal = currentVal[p];
+    
+    if(currentVal !== newValue) {
+        setValueAtPath(state.step3FinalObj, path, newValue);
+        state.transOutputRaw = JSON.stringify(state.step3FinalObj, null, 2);
+        log(`Manual edit saved at path [${path.join('/')}]`, "INFO");
+    }
+}
+
+function buildInteractiveJsonHTML(deepLNode, finalNode, path = []) {
+    if (finalNode === null) return `<span class="json-boolean">null</span>`;
+    if (typeof finalNode === 'boolean') return `<span class="json-boolean">${finalNode}</span>`;
+    if (typeof finalNode === 'number') return `<span class="json-number">${finalNode}</span>`;
+    
+    if (typeof finalNode === 'string') {
+        const escapedFinal = escapeHtml(finalNode);
+        const pathStr = escapeHtml(JSON.stringify(path));
+        let deepLStr = deepLNode;
+        if (typeof deepLNode === 'object' && deepLNode !== null) deepLStr = null; 
+
+        if (typeof deepLStr === 'string' && deepLStr !== finalNode) {
+            const encodedOriginal = encodeURIComponent(deepLStr);
+            return `"<span class="llm-changed editable-value" contenteditable="plaintext-only" onblur="handleManualEdit(event, this)" onclick="handleHighlightClick(event, this)" data-path='${pathStr}' data-original="${encodedOriginal}">${escapedFinal}</span>"`;
+        }
+        return `"<span class="json-string editable-value" contenteditable="plaintext-only" onblur="handleManualEdit(event, this)" data-path='${pathStr}'>${escapedFinal}</span>"`;
+    }
+    
+    if (Array.isArray(finalNode)) {
+        if (finalNode.length === 0) return '[]';
+        let html = '[\n';
+        for (let i = 0; i < finalNode.length; i++) {
+            const dObj = (Array.isArray(deepLNode) && deepLNode.length > i) ? deepLNode[i] : null;
+            const inner = buildInteractiveJsonHTML(dObj, finalNode[i], [...path, i]);
+            html += '  '.repeat(path.length + 1) + inner + (i < finalNode.length - 1 ? ',' : '') + '\n';
+        }
+        return html + '  '.repeat(path.length) + ']';
+    }
+    
+    if (typeof finalNode === 'object') {
+        const keys = Object.keys(finalNode);
+        if (keys.length === 0) return '{}';
+        let html = '{\n';
+        for (let i = 0; i < keys.length; i++) {
+            const key = keys[i];
+            const dObj = (deepLNode !== null && typeof deepLNode === 'object' && key in deepLNode) ? deepLNode[key] : null;
+            const inner = buildInteractiveJsonHTML(dObj, finalNode[key], [...path, key]);
+            html += '  '.repeat(path.length + 1) + `"<span class="json-key">${escapeHtml(key)}</span>": ` + inner + (i < keys.length - 1 ? ',' : '') + '\n';
+        }
+        return html + '  '.repeat(path.length) + '}';
+    }
+}
+
+function renderInteractiveOutput() {
+    if (!state.step3FinalObj) { ui.interactiveTransOutput.innerHTML = ""; return; }
+    ui.interactiveTransOutput.innerHTML = buildInteractiveJsonHTML(state.step3DeepLObj, state.step3FinalObj);
+}
+
+// Tooltip Logic
+let activePath = null; let activeOriginalStr = null;
+window.handleHighlightClick = function(event, element) {
+    event.stopPropagation();
+    activePath = JSON.parse(element.getAttribute('data-path'));
+    activeOriginalStr = decodeURIComponent(element.getAttribute('data-original'));
+    const rect = element.getBoundingClientRect();
+    ui.tooltip.style.display = 'block';
+    ui.tooltip.style.top = (rect.top - ui.tooltip.offsetHeight - 10) + 'px';
+    let leftPos = rect.left + (rect.width / 2) - (ui.tooltip.offsetWidth / 2);
+    if(leftPos < 10) leftPos = 10;
+    ui.tooltip.style.left = leftPos + 'px';
+    ui.revertBtn.textContent = activeOriginalStr;
+}
+
+function hideRevertTooltip() { ui.tooltip.style.display = 'none'; activePath = null; activeOriginalStr = null; }
+
+ui.revertBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if(activePath !== null && activeOriginalStr !== null) {
+        setValueAtPath(state.step3FinalObj, activePath, activeOriginalStr);
+        state.transOutputRaw = JSON.stringify(state.step3FinalObj, null, 2);
+        log(`Reverted path [${activePath.join(' -> ')}] to DeepL baseline.`, "INFO");
+        hideRevertTooltip(); renderInteractiveOutput();
+    }
 });
 
+
 /**
- * STEP 4: ASSEMBLY (Context-Aware Injection)
+ * STEP 4: FINAL ASSEMBLY (Image Injection)
  */
 ui.btn3.addEventListener('click', async () => {
+  // Sync groqJson if it was edited manually but translation is off
+  if(!state.translationEnabled && !state.groqJson && ui.jsonOut.value) state.groqJson = ui.jsonOut.value;
+  
   const src = state.translationEnabled ? state.transOutputRaw : state.groqJson;
-  if(!src) return alert("No JSON available");
+  if(!src) return alert("No JSON available to assemble.");
 
   ui.btn3.disabled = true;
   setProgress(3, 10, "Processing...");
@@ -1356,43 +1477,25 @@ ui.btn3.addEventListener('click', async () => {
     const quality = parseFloat(document.getElementById('imgQuality').value);
     const maxW = parseInt(document.getElementById('imgMaxWidth').value);
     const usedIds = new Set();
-
-    // Helper to check if a string is a placeholder
     const isPlaceholder = (str) => typeof str === 'string' && str.startsWith(CONFIG.phPrefix) && str.endsWith(CONFIG.phSuffix);
-    
-    // Helper to extract ID from placeholder
     const extractId = (ph) => ph.replace(CONFIG.phPrefix, '').replace(CONFIG.phSuffix, '').split('|')[0];
 
-    // Recursive walker that is Context-Aware
     const processNode = async (node, parentKey = null) => {
       if (Array.isArray(node)) {
-        const res = await Promise.all(node.map(item => processNode(item, parentKey)));
-        return res;
+        return await Promise.all(node.map(item => processNode(item, parentKey)));
       } 
       else if (typeof node === 'object' && node !== null) {
-        // OBJECTIVE 2: Check if this is a "Text Block" that is actually an "Image Placeholder"
         if (node.type === 'text' && isPlaceholder(node.content)) {
             const id = extractId(node.content);
             const asset = state.assets.find(a => a.id === id);
             if (asset) {
                 usedIds.add(id);
                 const b64 = await compressImage(asset.blob, true, quality, maxW);
-                // Convert to Image Block Structure
-                return {
-                    type: 'image',
-                    src: b64,
-                    width: asset.width, 
-                    description: '',
-                    compressionImmune: false,
-                    centering: node.centering || 'default'
-                };
+                return { type: 'image', src: b64, width: asset.width, description: '', compressionImmune: false, centering: node.centering || 'default' };
             }
         }
-
         const newObj = {};
-        for (const [key, val] of Object.entries(node)) {
-           newObj[key] = await processNode(val, key);
-        }
+        for (const [key, val] of Object.entries(node)) newObj[key] = await processNode(val, key);
         return newObj;
       }
       else if (typeof node === 'string') {
@@ -1401,76 +1504,41 @@ ui.btn3.addEventListener('click', async () => {
             const asset = state.assets.find(a => a.id === id);
             if (asset) {
                 usedIds.add(id);
-                // ALWAYS compress/convert to JPEG to ensure manageable size
                 const b64 = await compressImage(asset.blob, true, quality, maxW);
-                
-                // Context Check using parentKey
                 const isSource = parentKey && ['src', 'url', 'href', 'data'].includes(parentKey.toLowerCase());
-                
-                if (isSource) {
-                    return b64;
-                } else {
-                    return {
-                        type: 'image',
-                        src: b64,
-                        width: asset.width,
-                        description: '',
-                        compressionImmune: false,
-                        centering: 'default'
-                    };
-                }
+                if (isSource) return b64;
+                else return { type: 'image', src: b64, width: asset.width, description: '', compressionImmune: false, centering: 'default' };
             }
-            // Asset not found? Return original string
-            return node; 
         }
-        return node;
       }
       return node;
     };
 
-    setProgress(3, 30, "Processing Images...");
+    setProgress(3, 30, "Injecting Images...");
     let processedJson = await processNode(obj);
 
-    // FALLBACK: Inject unused images into Info.Images or Info.Bilder
-    // Only consider images that were SELECTED in Step 1
     const validAssets = state.assets.filter(a => state.selectedImageIds.has(a.id));
     const unusedAssets = validAssets.filter(a => !usedIds.has(a.id));
     
     if(unusedAssets.length > 0) {
       log(`Injecting ${unusedAssets.length} missing images into Info...`, "WARN");
-      
       if(!processedJson.Info) processedJson.Info = {};
-      
       let targetArray = null;
       if(Array.isArray(processedJson.Info.Images)) targetArray = processedJson.Info.Images;
       else if(Array.isArray(processedJson.Info.Bilder)) targetArray = processedJson.Info.Bilder;
-      else {
-        processedJson.Info.Images = [];
-        targetArray = processedJson.Info.Images;
-      }
+      else { processedJson.Info.Images = []; targetArray = processedJson.Info.Images; }
 
       for(const asset of unusedAssets) {
         const b64 = await compressImage(asset.blob, true, quality, maxW);
-        targetArray.push({
-          type: 'image',
-          src: b64,
-          width: asset.width,
-          description: '',
-          compressionImmune: false,
-          centering: 'default'
-        });
+        targetArray.push({ type: 'image', src: b64, width: asset.width, description: '', compressionImmune: false, centering: 'default' });
       }
     }
 
-    // --- STRICT SANITIZATION ---
     state.finalJson = sanitizeFinalJson(processedJson);
-    
-    const jsonStr = JSON.stringify(state.finalJson, null, 2);
-    ui.finalOut.textContent = jsonStr;
+    ui.finalOut.textContent = JSON.stringify(state.finalJson, null, 2);
     
     setProgress(3, 100, "Assembly Complete");
     log("Step 4 Complete", "SUCCESS");
-    
     state.step4Done = true;
     drawFlow();
 
@@ -1482,44 +1550,29 @@ ui.btn3.addEventListener('click', async () => {
   }
 });
 
-// --- Sanitizer Function ---
 function sanitizeFinalJson(data) {
   if (!data || typeof data !== 'object') data = {};
   if (!data.quote) data.quote = {};
   
-  // Helper to fix items array
   const fixItems = (arr) => {
     if (!Array.isArray(arr)) return [];
-    // Filter out nulls and non-objects
     return arr.filter(i => i && typeof i === 'object').map(item => {
-      // Fix subItems: Must be an array
       if (item.subItems && !Array.isArray(item.subItems)) {
-        if (typeof item.subItems === 'object') item.subItems = [item.subItems];
-        else item.subItems = [];
+        if (typeof item.subItems === 'object') item.subItems = [item.subItems]; else item.subItems = [];
       }
       if (!item.subItems) item.subItems = [];
       return item;
     });
   };
 
-  if (data.items) data.items = fixItems(data.items);
-  else data.items = [];
-
-  if (data.optionalItems) data.optionalItems = fixItems(data.optionalItems);
-  else data.optionalItems = [];
+  if (data.items) data.items = fixItems(data.items); else data.items = [];
+  if (data.optionalItems) data.optionalItems = fixItems(data.optionalItems); else data.optionalItems = [];
   
-  // Fix InfoImages
   if (data.infoImages && !Array.isArray(data.infoImages)) {
-     if (typeof data.infoImages === 'object') data.infoImages = [data.infoImages];
-     else data.infoImages = [];
+     if (typeof data.infoImages === 'object') data.infoImages = [data.infoImages]; else data.infoImages = [];
   }
-  if (data.infoImages) {
-    data.infoImages = data.infoImages.filter(i => i && typeof i === 'object');
-  } else {
-    data.infoImages = [];
-  }
+  if (data.infoImages) data.infoImages = data.infoImages.filter(i => i && typeof i === 'object'); else data.infoImages = [];
 
-  // Ensure Company Objects are Objects (not strings)
   if (data.companyA && typeof data.companyA !== 'object') data.companyA = { name: String(data.companyA) };
   if (data.companyB && typeof data.companyB !== 'object') data.companyB = { name: String(data.companyB) };
 
@@ -1531,19 +1584,14 @@ function compressImage(blob, doCompress, quality, maxWidth) {
     const reader = new FileReader();
     reader.onload = (e) => {
       if(!doCompress) return resolve(e.target.result);
-      
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
         let w = img.width, h = img.height;
-        if(w > maxWidth) {
-          h = Math.round(h * (maxWidth/w));
-          w = maxWidth;
-        }
+        if(w > maxWidth) { h = Math.round(h * (maxWidth/w)); w = maxWidth; }
         canvas.width = w; canvas.height = h;
         const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#FFFFFF'; 
-        ctx.fillRect(0,0,w,h);
+        ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0,0,w,h);
         ctx.drawImage(img, 0, 0, w, h);
         resolve(canvas.toDataURL('image/jpeg', quality));
       };
@@ -1554,7 +1602,7 @@ function compressImage(blob, doCompress, quality, maxWidth) {
   });
 }
 
-// BTK & Utils
+// BTK Utils
 window.copyToClip = (id) => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -1563,8 +1611,7 @@ window.copyToClip = (id) => {
         const btn = document.activeElement;
         if(btn && btn.tagName === 'BUTTON') {
             const original = btn.textContent;
-            btn.textContent = "Copied!";
-            setTimeout(() => btn.textContent = original, 1500);
+            btn.textContent = "Copied!"; setTimeout(() => btn.textContent = original, 1500);
         }
     });
     log("Copied to clipboard");
@@ -1576,16 +1623,17 @@ ui.btnDl.addEventListener('click', () => {
     a.download = 'final_output.json';
     a.click();
 });
+
 ui.btnOpenBtkLocal.addEventListener('click', () => {
     const id = crypto.randomUUID();
     localStorage.setItem('btk_quote_'+id, JSON.stringify(state.finalJson));
     window.open(CONFIG.btkUrl + '?quoteId=' + id, '_blank');
 });
+
 ui.btnOpenBtkUrl.addEventListener('click', () => {
     const b64 = btoa(String.fromCharCode.apply(null, pako.deflate(JSON.stringify(state.finalJson))));
     window.open(CONFIG.btkUrl + '#q=' + b64, '_blank');
 });
-
 </script>
 </body>
 </html>
