@@ -310,10 +310,11 @@
 
         <div>
           <label>Prompt Instruction</label>
-          <textarea id="groqPrompt" style="height:100px">Output a json using the text provided while modeling the json according to the json schema provided. Most text is in chronological order. 
-!IMPORTANT: Do not summarize. 
-!IMPORTANT: Keep image placeholder tags ({{IMG:...}}) exactly as they are.
-!IMPORTANT: Convert all measurements to SI units where appropriate.</textarea>
+          <textarea id="groqPrompt" style="height:100px">Output a json using the text provided while modeling the json according to the json schema provided. That is create a json according to json schema and populate with the text from the text provided. Most text is in chronological order. 
+!IMPORTANT make sure not to summarize anything 
+!IMPORTANT keep the image placeholder tags in exactly the same form/name and in the same place / order as in the original text compared to the rest of the json structure 
+!IMPORTANT accuracy is very important
+!IMPORTANT: Keep image placeholder tags ({{IMG:...}}) exactly as they are.</textarea>
         </div>
 
         <button id="btnStep2" class="primary" style="width:100%" disabled>Run Structuring</button>
